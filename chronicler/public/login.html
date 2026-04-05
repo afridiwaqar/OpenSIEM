@@ -1,0 +1,295 @@
+<!--
+ OpenSIEM - Security Information & Event Management
+ Copyright (c) 2024–present
+ Licensed under GNU GPL v3.0
+ See LICENSE for details.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OpenSIEM Atom — Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── LAYER 3 — Atom codename image, full viewport, 30% opacity ── */
+    body {
+      min-height: 100vh;
+      background-color: #070c1a;
+      font-family: system-ui, 'Segoe UI', Arial, sans-serif;
+      color: #d4e0ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bg-atom {
+      position: fixed;
+      inset: 0;
+      background: url('/img/codename.png') center center / cover no-repeat;
+      opacity: 0.30;
+      z-index: 1;
+      /* Subtle vignette so edges fade to dark */
+      mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, black 40%, transparent 100%);
+      -webkit-mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, black 40%, transparent 100%);
+    }
+
+    /* Dark overlay to ensure text stays readable */
+    .bg-overlay {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at center,
+        rgba(7,12,26,.4) 0%,
+        rgba(7,12,26,.75) 100%);
+      z-index: 2;
+    }
+
+    /* ── Login wrapper — sits above both bg layers ── */
+    .login-wrap {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── LAYER 2 — opensiem.png logo, above the form ── */
+    .logo-block {
+      margin-bottom: -1px;   /* overlaps slightly onto the card top edge */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    .logo-block img {
+      width: 220px;          /* adjust to taste */
+      max-width: 70vw;
+      opacity: 1;            /* 100% — fully visible */
+      filter: drop-shadow(0 0 24px rgba(61,107,232,.5));
+      display: block;
+    }
+
+    /* ── LAYER 1 — credential frame ── */
+    .login-card {
+      width: 360px;
+      max-width: 92vw;
+      background: rgba(13, 21, 40, 0.92);
+      border: 1px solid #2a4888;
+      border-top: 3px solid #b01828;   /* red top line = costume split */
+      border-radius: 0 0 12px 12px;    /* flat top (logo sits above), rounded bottom */
+      padding: 28px 28px 24px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow:
+        0 20px 60px rgba(0,0,0,.7),
+        0 0 0 1px rgba(61,107,232,.1),
+        inset 0 1px 0 rgba(255,255,255,.04);
+    }
+
+    .login-card h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #d4e0ff;
+      margin-bottom: 4px;
+      letter-spacing: .02em;
+    }
+
+    .login-card .subtitle {
+      font-size: 12px;
+      color: #3a5888;
+      margin-bottom: 22px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    /* Divider line under subtitle */
+    .login-card .subtitle::after {
+      content: '';
+      display: block;
+      height: 1px;
+      background: linear-gradient(90deg, #b01828 0%, #1a3a8f 50%, transparent 100%);
+      margin-top: 12px;
+    }
+
+    /* ── Fields ── */
+    .field {
+      margin-bottom: 14px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 10px;
+      color: #4a6888;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 5px;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid #1a2a48;
+      background: rgba(5, 8, 16, 0.8);
+      color: #d4e0ff;
+      font-size: 14px;
+      transition: border-color .15s, box-shadow .15s;
+      outline: none;
+    }
+
+    .field input:focus {
+      border-color: #3d6be8;
+      box-shadow: 0 0 0 2px rgba(61,107,232,.2),
+                  0 0 12px rgba(61,107,232,.1);
+    }
+
+    .field input::placeholder { color: #2a3858; }
+
+    /* ── Sign in button — red, costume lower half ── */
+    .btn-signin {
+      width: 100%;
+      padding: 11px;
+      margin-top: 6px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #b01828 0%, #8a1020 100%);
+      color: #fff;
+      border: 1px solid #e8253a;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: filter .15s, box-shadow .15s;
+      box-shadow: 0 4px 16px rgba(176,24,40,.4);
+    }
+
+    .btn-signin:hover {
+      filter: brightness(1.15);
+      box-shadow: 0 4px 24px rgba(232,37,58,.55);
+    }
+
+    .btn-signin:active { filter: brightness(.9); }
+
+    /* ── Error message ── */
+    #msg {
+      margin-top: 12px;
+      min-height: 18px;
+      font-size: 12px;
+      color: #ff4060;
+      text-align: center;
+      letter-spacing: .02em;
+    }
+
+    /* ── Footer tag ── */
+    .login-footer {
+      margin-top: 18px;
+      font-size: 10px;
+      color: #1e2e48;
+      text-align: center;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LAYER 3: Atom codename background image at 30% -->
+  <div class="bg-atom" aria-hidden="true"></div>
+  <!-- Dark overlay so content stays readable -->
+  <div class="bg-overlay" aria-hidden="true"></div>
+
+  <!-- Login stack -->
+  <div class="login-wrap">
+
+    <!-- LAYER 2: OpenSIEM logo, sitting above the card -->
+    <div class="logo-block">
+      <img src="/img/opensiem.png" alt="OpenSIEM" draggable="false">
+    </div>
+
+    <!-- LAYER 1: Credential frame -->
+    <div class="login-card">
+      <h2>Sign In</h2>
+      <div class="subtitle">OpenSIEM Atom v1 &nbsp;·&nbsp; Secure Access</div>
+
+      <form id="loginForm" autocomplete="on" onsubmit="return false">
+        <div class="field">
+          <label for="id">Username or Email</label>
+          <input id="id" type="text" autocomplete="username"
+                 placeholder="username or email@domain.com">
+        </div>
+        <div class="field">
+          <label for="pw">Password</label>
+          <input id="pw" type="password" autocomplete="current-password"
+                 placeholder="••••••••">
+        </div>
+        <button class="btn-signin" id="go" type="button">Sign In</button>
+      </form>
+
+      <div id="msg" role="alert" aria-live="polite"></div>
+    </div>
+
+    <div class="login-footer">OpenSIEM &nbsp;·&nbsp; Atom v1 &nbsp;·&nbsp; &copy; 2025</div>
+  </div>
+
+  <script>
+    const id  = document.getElementById('id');
+    const pw  = document.getElementById('pw');
+    const btn = document.getElementById('go');
+    const msg = document.getElementById('msg');
+
+    async function doLogin() {
+      msg.textContent = '';
+      const idVal = id.value.trim();
+      const pwVal = pw.value;
+
+      if (!idVal || !pwVal) {
+        msg.textContent = 'Username and password are required.';
+        return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Signing in…';
+
+      try {
+        const res  = await fetch('/api/auth/login.php', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ id: idVal, password: pwVal })
+        });
+        const out = await res.json();
+
+        if (out.ok) {
+          sessionStorage.setItem('csrf', out.csrf);
+          location.href = '/';
+        } else {
+          msg.textContent  = out.error || 'Login failed. Check your credentials.';
+          btn.disabled     = false;
+          btn.textContent  = 'Sign In';
+          pw.value         = '';
+          pw.focus();
+        }
+      } catch (e) {
+        msg.textContent = 'Network error — please try again.';
+        btn.disabled    = false;
+        btn.textContent = 'Sign In';
+      }
+    }
+
+    btn.addEventListener('click', doLogin);
+
+    // Allow Enter key from either field
+    [id, pw].forEach(el =>
+      el.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); })
+    );
+
+    // Focus username on load
+    id.focus();
+  </script>
+</body>
+</html>

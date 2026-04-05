@@ -1,0 +1,269 @@
+#!/bin/bash
+# OpenSIEM - GPL-3.0 Licensed
+# Copyright (c) 2024–present
+# See LICENSE for details.
+# =============================================================================
+# OpenSIEM — Random Log Generator
+#
+# Generates random logs with various severity levels (info, warning, error, critical)
+# using the logger command. Useful for testing SIEM rules and alerting.
+#
+# Usage:
+#   ./generate_logs.sh                    # Generate 10 logs (default)
+#   ./generate_logs.sh -n 50              # Generate 50 logs
+#   ./generate_logs.sh -c                 # Continuous mode (Ctrl+C to stop)
+#   ./generate_logs.sh -s 2               # Generate logs every 2 seconds
+#   ./generate_logs.sh -t "myapp"         # Use custom tag
+# =============================================================================
+
+set -euo pipefail
+
+# Default values
+NUM_LOGS=10
+CONTINUOUS=false
+INTERVAL=1
+TAG="opensiem-test"
+SYSLOG_FACILITY="user"  # user, local0, local1, etc.
+
+# Colors for output
+RED='\033[0;31m'
+GRN='\033[0;32m'
+YLW='\033[1;33m'
+BLU='\033[0;34m'
+MAG='\033[0;35m'
+CYN='\033[0;36m'
+NC='\033[0m'
+
+# Help function
+show_help() {
+    cat << EOF
+Usage: $0 [OPTIONS]
+
+Options:
+    -n NUM      Number of logs to generate (default: 10)
+    -c          Continuous mode - generate logs forever (Ctrl+C to stop)
+    -s SECONDS  Sleep interval between logs in continuous mode (default: 1)
+    -t TAG      Custom syslog tag (default: opensiem-test)
+    -f FACILITY Syslog facility (default: user)
+    -h          Show this help message
+
+Examples:
+    $0 -n 20                    # Generate 20 random logs
+    $0 -c                       # Generate logs continuously
+    $0 -c -s 2                  # Generate a log every 2 seconds
+    $0 -t "myapp" -n 50         # Use custom tag and generate 50 logs
+    $0 -f local0 -c             # Use local0 facility in continuous mode
+EOF
+    exit 0
+}
+
+# Parse command line arguments
+while getopts "n:cs:t:f:h" opt; do
+    case $opt in
+        n) NUM_LOGS="$OPTARG" ;;
+        c) CONTINUOUS=true ;;
+        s) INTERVAL="$OPTARG" ;;
+        t) TAG="$OPTARG" ;;
+        f) SYSLOG_FACILITY="$OPTARG" ;;
+        h) show_help ;;
+        *) show_help ;;
+    esac
+done
+
+# Validate numeric arguments
+if ! [[ "$NUM_LOGS" =~ ^[0-9]+$ ]] || [ "$NUM_LOGS" -lt 1 ]; then
+    echo "Error: NUM_LOGS must be a positive integer" >&2
+    exit 1
+fi
+
+if ! [[ "$INTERVAL" =~ ^[0-9]+(\.[0-9]+)?$ ]] || [ "$(echo "$INTERVAL <= 0" | bc)" -eq 1 ]; then
+    echo "Error: INTERVAL must be a positive number" >&2
+    exit 1
+fi
+
+# Arrays of random log messages for different severities
+declare -A INFO_MESSAGES=(
+    [0]="User authentication successful"
+    [1]="Database connection established"
+    [2]="Scheduled job completed successfully"
+    [3]="Configuration file loaded"
+    [4]="Service started"
+    [5]="Cache refreshed successfully"
+    [6]="API endpoint called: /api/v1/status"
+    [7]="New session created for user"
+    [8]="Backup completed successfully"
+    [9]="Health check passed"
+)
+
+declare -A WARNING_MESSAGES=(
+    [0]="High memory usage detected: 85%"
+    [1]="Slow query detected: 2.5s execution time"
+    [2]="Deprecated API version used"
+    [3]="Rate limit approaching: 80% threshold"
+    [4]="Certificate expires in 7 days"
+    [5]="Retrying failed connection attempt"
+    [6]="Disk space low: 15% remaining"
+    [7]="Unusual login pattern detected"
+    [8]="Failed login attempts: 3 from same IP"
+    [9]="Service response time increased: 1.2s"
+)
+
+declare -A ERROR_MESSAGES=(
+    [0]="Database connection failed: timeout"
+    [1]="Failed to parse configuration file"
+    [2]="Service crashed with exit code 1"
+    [3]="Authentication failed for user"
+    [4]="Network timeout reaching external API"
+    [5]="File not found: /etc/opensiem/config"
+    [6]="Permission denied accessing resource"
+    [7]="JSON parsing error at line 42"
+    [8]="SSL handshake failed"
+    [9]="Out of memory: process killed"
+)
+
+declare -A CRITICAL_MESSAGES=(
+    [0]="System crash detected: kernel panic"
+    [1]="Data corruption detected in database"
+    [2]="Security breach: unauthorized access"
+    [3]="Critical service unavailable"
+    [4]="Massive authentication failure: possible attack"
+    [5]="Disk full: 0 bytes remaining"
+    [6]="Root access compromised"
+    [7]="Malicious payload detected"
+    [8]="System unresponsive: watchdog triggered"
+    [9]="Sensitive data exposure detected"
+)
+
+# Additional random data for more realistic logs
+USERNAMES=("john.doe" "jane.smith" "admin" "api-user" "monitoring" "alice" "bob" "root" "www-data" "postgres")
+IPS=("192.168.1.100" "10.0.0.50" "172.31.0.10" "203.0.113.5" "198.51.100.23" "192.168.1.1" "10.0.0.1" "8.8.8.8")
+ENDPOINTS=("/api/login" "/api/data" "/health" "/metrics" "/api/users" "/api/config" "/api/search")
+STATUS_CODES=("200" "201" "400" "401" "403" "404" "500" "502" "503")
+
+# Helper function to get random element from array
+random_element() {
+    local array=("${!1}")
+    echo "${array[$((RANDOM % ${#array[@]}))]}"
+}
+
+# Helper function to generate random IP with realistic formatting
+random_ip() {
+    echo "$((RANDOM % 256)).$((RANDOM % 256)).$((RANDOM % 256)).$((RANDOM % 256))"
+}
+
+# Helper function to generate random timestamp
+random_timestamp() {
+    date -d "@$((RANDOM % 1000000000 + 1600000000))" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date "+%Y-%m-%d %H:%M:%S"
+}
+
+# Function to generate a random log based on severity
+generate_log() {
+    local severity="$1"
+    local message=""
+    local log_level=""
+    
+    case $severity in
+        "info")
+            message=$(random_element INFO_MESSAGES[@])
+            # Enhance with random data
+            if [[ $((RANDOM % 2)) -eq 0 ]]; then
+                message="$message [user: $(random_element USERNAMES[@])]"
+            fi
+            log_level="info"
+            color=$BLU
+            ;;
+        "warning")
+            message=$(random_element WARNING_MESSAGES[@])
+            # Enhance with random data
+            message="$message [threshold: $((RANDOM % 100))%]"
+            log_level="warning"
+            color=$YLW
+            ;;
+        "error")
+            message=$(random_element ERROR_MESSAGES[@])
+            # Enhance with random data
+            if [[ $((RANDOM % 2)) -eq 0 ]]; then
+                message="$message [ip: $(random_element IPS[@])]"
+            fi
+            log_level="err"
+            color=$RED
+            ;;
+        "critical")
+            message=$(random_element CRITICAL_MESSAGES[@])
+            # Enhance with random data
+            message="$message [severity: CRITICAL]"
+            log_level="crit"
+            color=$MAG
+            ;;
+    esac
+    
+    # Add more realism with HTTP request patterns sometimes
+    if [[ $((RANDOM % 3)) -eq 0 ]] && [[ "$severity" != "critical" ]]; then
+        endpoint=$(random_element ENDPOINTS[@])
+        status=$(random_element STATUS_CODES[@])
+        ip=$(random_ip)
+        message="$message - HTTP $ip - - [$endpoint] $status"
+    fi
+    
+    # Use logger command with appropriate priority
+    # Format: facility.severity (e.g., user.info, user.warning, etc.)
+    logger -t "$TAG" -p "${SYSLOG_FACILITY}.${log_level}" "$message"
+    
+    # Also print to stdout with color for visibility
+    echo -e "${color}[$(date '+%Y-%m-%d %H:%M:%S')] [${severity^^}] ${TAG}: ${message}${NC}"
+}
+
+# Function to get random severity with weighted distribution
+random_severity() {
+    local rand=$((RANDOM % 100))
+    if [ $rand -lt 50 ]; then
+        echo "info"      # 50% info
+    elif [ $rand -lt 75 ]; then
+        echo "warning"   # 25% warning
+    elif [ $rand -lt 90 ]; then
+        echo "error"     # 15% error
+    else
+        echo "critical"  # 10% critical
+    fi
+}
+
+# Function to generate logs with specific severity distribution
+generate_log_with_distribution() {
+    local severity=$(random_severity)
+    generate_log "$severity"
+}
+
+# Print header
+echo -e "${CYN}════════════════════════════════════════════════════════════${NC}"
+echo -e "${CYN}     OpenSIEM Random Log Generator - Starting...            ${NC}"
+echo -e "${CYN}════════════════════════════════════════════════════════════${NC}"
+echo -e "Tag: ${GRN}$TAG${NC}"
+echo -e "Facility: ${GRN}$SYSLOG_FACILITY${NC}"
+echo -e "Syslog destination: ${GRN}/var/log/syslog or /var/log/messages${NC}"
+echo -e "${CYN}════════════════════════════════════════════════════════════${NC}"
+echo ""
+
+# Main loop
+if [ "$CONTINUOUS" = true ]; then
+    echo -e "${YLW}Continuous mode enabled. Press Ctrl+C to stop.${NC}"
+    echo -e "${YLW}Generating log every ${INTERVAL} second(s)...${NC}\n"
+    
+    trap 'echo -e "\n${YLW}Stopping log generation...${NC}"; exit 0' INT TERM
+    
+    while true; do
+        generate_log_with_distribution
+        sleep "$INTERVAL"
+    done
+else
+    echo -e "${YLW}Generating $NUM_LOGS random logs...${NC}\n"
+    
+    for i in $(seq 1 "$NUM_LOGS"); do
+        generate_log_with_distribution
+        if [ $i -lt "$NUM_LOGS" ]; then
+            sleep 0.1  # Small delay to avoid overwhelming syslog
+        fi
+    done
+    
+    echo -e "\n${GRN}✓ Generated $NUM_LOGS logs successfully.${NC}"
+    echo -e "${GRN}  Check syslog with: tail -f /var/log/syslog | grep $TAG${NC}"
+fi

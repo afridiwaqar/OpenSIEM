@@ -1,0 +1,245 @@
+<!--
+ OpenSIEM - Security Information & Event Management
+ Copyright (c) 2024–present
+ Licensed under GNU GPL v3.0
+ See LICENSE for details.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Chronicler • Settings</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/dashboard.css">
+  <style>
+    .page { padding:16px; max-width:760px; }
+
+    /* Tab strip */
+    .tabs        { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid #1c2434; padding-bottom:0; }
+    .tab-btn     { padding:8px 18px; background:none; border:none; color:#9aa8bd; cursor:pointer;
+                   border-bottom:2px solid transparent; margin-bottom:-1px; font-size:13px; border-radius:6px 6px 0 0; }
+    .tab-btn:hover    { color:#fff; background:#0f1521; }
+    .tab-btn.active   { color:#c8dff5; border-bottom-color:#4a8abf; background:#0f1521; }
+
+    /* Tab panels */
+    .tab-panel   { display:none; }
+    .tab-panel.active { display:block; }
+
+    /* Section card */
+    .card        { background:#0f1521; border:1px solid #1c2434; border-radius:8px; padding:20px; }
+    .card h3     { margin:0 0 4px; color:#c8dff5; font-size:15px; }
+    .card .desc  { color:#6a8aaa; font-size:12px; margin-bottom:18px; }
+
+    /* Field groups */
+    .field-group { display:grid; gap:14px; }
+    .field-group.cols2 { grid-template-columns:1fr 1fr; }
+
+    .field label      { display:block; font-size:12px; color:#9aa8bd; margin-bottom:5px; letter-spacing:.03em; }
+    .field input      { width:100%; padding:9px 10px; border:1px solid #1c2434; border-radius:6px;
+                        background:#090d14; color:#d6e3f3; font-size:13px; box-sizing:border-box; }
+    .field input:focus { outline:none; border-color:#2a5a8c; }
+    .field .hint      { font-size:11px; color:#4a6a8a; margin-top:4px; }
+
+    /* Toggle (enabled/disabled) */
+    .toggle-row  { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+    .toggle-row label { font-size:13px; color:#b8c7dc; }
+
+    /* Severity checkboxes */
+    .sev-group   { display:flex; gap:8px; flex-wrap:wrap; margin-top:2px; }
+    .sev-chip    { display:flex; align-items:center; gap:6px; padding:5px 12px;
+                   border-radius:20px; border:1px solid #1c2434; cursor:pointer;
+                   font-size:12px; user-select:none; transition:all .15s; }
+    .sev-chip input { display:none; }
+    .sev-chip.low     { background:#0a1a0a; border-color:#1a3020; color:#7ecb7e; }
+    .sev-chip.mid     { background:#1a1500; border-color:#3a2f00; color:#ffd66e; }
+    .sev-chip.high    { background:#1a0a0a; border-color:#3a1010; color:#ff9a9a; }
+    .sev-chip.critical{ background:#200a0a; border-color:#4a1010; color:#ff6b6b; }
+    .sev-chip.checked { filter:brightness(1.4); border-width:2px; }
+
+    /* Divider */
+    hr { border:none; border-top:1px solid #1c2434; margin:18px 0; }
+
+    /* Save button + status */
+    .save-row    { display:flex; align-items:center; gap:12px; margin-top:20px; }
+    .btn-save    { padding:9px 22px; background:#1a3a5c; border:1px solid #2a5a8c;
+                   color:#c8dff5; border-radius:6px; cursor:pointer; font-size:13px; }
+    .btn-save:hover { filter:brightness(1.15); }
+    .save-status { font-size:12px; color:#7ecb7e; display:none; }
+    .save-status.err { color:#ff9a9a; }
+
+    /* Info box */
+    .info-box    { background:#090d14; border:1px solid #1c2434; border-radius:6px;
+                   padding:10px 14px; font-size:12px; color:#6a8aaa; margin-top:14px; }
+    .info-box code { color:#7ab0d8; }
+  </style>
+</head>
+<body>
+  <nav class="top-nav">
+    <a href="/">Dashboard</a>
+    <a href="/correlation.html">Correlation Rules</a>
+    <a href="/artifacts.html">Artifacts</a>
+    <a href="/alerts.html">Alerts</a>
+    <a href="/logs.html">Logs</a>
+    <a href="/reports.html">Reports</a>
+    <a href="/clients.html">Clients</a>
+    <a href="/users.html">Users</a>
+    <a class="active" href="/settings.html">Settings</a>
+    <div class="noti-wrap" style="margin-left:auto">
+      <button id="notiBell" class="bell" aria-label="Notifications">
+        <span class="bell-icon">🔔</span>
+        <span id="notiBadge" class="badge">0</span>
+      </button>
+      <div id="notiMenu" class="dropdown hidden" role="menu" aria-hidden="true">
+        <div class="dropdown-header">Notifications</div>
+        <div id="notiList" class="dropdown-list"></div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page">
+
+    <!-- Tab strip -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="db">🗄 Database</button>
+      <button class="tab-btn"        data-tab="email">✉ Email</button>
+      <button class="tab-btn"        data-tab="alerts">🔔 Alerts</button>
+    </div>
+
+    <!-- ── Database ────────────────────────────────────────────────── -->
+    <div class="tab-panel active" id="tab-db">
+      <div class="card">
+        <h3>Database Connection</h3>
+        <p class="desc">PostgreSQL connection used by the correlation engine and web API. Restart services after changing.</p>
+
+        <div class="field-group cols2">
+          <div class="field">
+            <label>Host</label>
+            <input id="dbHost" placeholder="127.0.0.1">
+          </div>
+          <div class="field">
+            <label>Port</label>
+            <input id="dbPort" type="number" placeholder="5432">
+          </div>
+          <div class="field">
+            <label>Database name</label>
+            <input id="dbName" placeholder="museum">
+          </div>
+          <div class="field">
+            <label>User</label>
+            <input id="dbUser" placeholder="waqar">
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label>Password</label>
+            <input id="dbPass" type="password" autocomplete="new-password" placeholder="leave blank to keep current">
+            <div class="hint">Leave blank to keep the existing password unchanged.</div>
+          </div>
+        </div>
+
+        <div class="info-box">
+          A backup is written to <code>opensiem.conf.bak</code> before each save. Only the <code>[database]</code> section is updated — other sections are untouched.
+        </div>
+
+        <div class="save-row">
+          <button class="btn-save" id="saveDB">Save Database Settings</button>
+          <span class="save-status" id="statusDB"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Email ───────────────────────────────────────────────────── -->
+    <div class="tab-panel" id="tab-email">
+      <div class="card">
+        <h3>Email / SMTP</h3>
+        <p class="desc">Used to send alert notifications. Only the <code>[email]</code> section is updated on save.</p>
+
+        <div class="toggle-row">
+          <input type="checkbox" id="emailEnabled">
+          <label for="emailEnabled">Enable email notifications</label>
+        </div>
+
+        <div class="field-group cols2">
+          <div class="field">
+            <label>SMTP server</label>
+            <input id="smtpServer" placeholder="smtp.gmail.com">
+          </div>
+          <div class="field">
+            <label>SMTP port</label>
+            <input id="smtpPort" type="number" placeholder="587">
+          </div>
+          <div class="field">
+            <label>Sender email</label>
+            <input id="senderEmail" type="email" placeholder="alerts@yourdomain.com">
+          </div>
+          <div class="field">
+            <label>Sender password</label>
+            <input id="senderPass" type="password" autocomplete="new-password" placeholder="leave blank to keep current">
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label>Admin emails <span style="color:#4a6a8a;font-weight:normal">(comma-separated)</span></label>
+            <input id="adminEmails" placeholder="admin@domain.com, sec@domain.com">
+          </div>
+        </div>
+
+        <hr>
+        <div class="field">
+          <label>TLS</label>
+          <div class="toggle-row" style="margin:0">
+            <input type="checkbox" id="useTls">
+            <label for="useTls">Use TLS (recommended)</label>
+          </div>
+        </div>
+
+        <div class="save-row">
+          <button class="btn-save" id="saveEmail">Save Email Settings</button>
+          <span class="save-status" id="statusEmail"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Alerts ──────────────────────────────────────────────────── -->
+    <div class="tab-panel" id="tab-alerts">
+      <div class="card">
+        <h3>Alert Behaviour</h3>
+        <p class="desc">Controls which severities trigger notifications and how often. Only the <code>[alerts]</code> section is updated on save.</p>
+
+        <div class="field-group">
+          <div class="field">
+            <label>Email severities — send an email for these</label>
+            <div class="sev-group" id="emailSevGroup">
+              <label class="sev-chip low">     <input type="checkbox" value="low">      Low</label>
+              <label class="sev-chip mid">     <input type="checkbox" value="mid">      Medium</label>
+              <label class="sev-chip high">    <input type="checkbox" value="high">     High</label>
+              <label class="sev-chip critical"><input type="checkbox" value="critical">  Critical</label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>UI severities — show in ribbon and bell for these</label>
+            <div class="sev-group" id="uiSevGroup">
+              <label class="sev-chip low">     <input type="checkbox" value="low">      Low</label>
+              <label class="sev-chip mid">     <input type="checkbox" value="mid">      Medium</label>
+              <label class="sev-chip high">    <input type="checkbox" value="high">     High</label>
+              <label class="sev-chip critical"><input type="checkbox" value="critical">  Critical</label>
+            </div>
+          </div>
+
+          <div class="field" style="max-width:220px">
+            <label>Cooldown period</label>
+            <input id="cooldown" type="number" min="0" placeholder="300">
+            <div class="hint">Seconds between repeated alerts of the same type. 0 = no cooldown.</div>
+          </div>
+        </div>
+
+        <div class="save-row">
+          <button class="btn-save" id="saveAlerts">Save Alert Settings</button>
+          <span class="save-status" id="statusAlerts"></span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- .page -->
+
+  <script src="/settings.js"></script>
+</body>
+</html>

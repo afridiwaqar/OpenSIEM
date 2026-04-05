@@ -1,0 +1,354 @@
+<!--
+ OpenSIEM - Security Information & Event Management
+ Copyright (c) 2024–present
+ Licensed under GNU GPL v3.0
+ See LICENSE for details.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Chronicler • Correlation Rules</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/dashboard.css">
+  <style>
+    /* ── Tab bar ──────────────────────────────────────────── */
+    .tabs { display:flex; gap:8px; padding:10px 14px; border-bottom:1px solid #1c2434; background:#0b0f14; }
+    .tab  { padding:8px 14px; background:#1c2434; color:#e9eef5; border:1px solid #2a3550; border-radius:8px; cursor:pointer; font-size:13px; transition:background .15s; }
+    .tab.active, .tab:hover { background:#22304a; }
+    .tabpanes { padding:16px; }
+    .pane { display:none; }
+    .pane.active { display:block; }
+
+    /* ── Base elements ────────────────────────────────────── */
+    .card { background:#0f1521; border:1px solid #1c2434; border-radius:8px; padding:16px; margin-bottom:16px; }
+    .card h3 { margin:0 0 14px; color:#b8c7dc; font-size:14px; letter-spacing:.04em; text-transform:uppercase; }
+    .muted   { color:#9aa8bd; font-size:12px; }
+    .table   { width:100%; border-collapse:collapse; }
+    .table th,.table td { border-bottom:1px solid #1c2434; padding:9px 8px; text-align:left; font-size:13px; }
+    .table th { color:#9aa8bd; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+    .btn     { padding:6px 12px; background:#1c2434; color:#e9eef5; border:1px solid #2a3550; border-radius:6px; cursor:pointer; font-size:13px; transition:filter .15s; }
+    .btn:hover { filter:brightness(1.15); }
+    .btn.danger  { background:#3a1414; border-color:#5c2020; }
+    .btn.small   { padding:4px 9px; font-size:12px; }
+    .btn.primary { background:#1a3a5c; border-color:#2a5a8c; color:#c8dff5; }
+    .btn.primary:hover { background:#1f4570; }
+    .empty   { color:#9aa8bd; padding:8px 0; font-size:13px; }
+    .pill    { background:#1c2434; padding:3px 8px; border-radius:20px; font-size:11px; border:1px solid #2a3550; color:#9aa8bd; }
+
+    /* ── Form elements ────────────────────────────────────── */
+    label   { display:block; font-size:11px; color:#9aa8bd; text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
+    input[type=text], textarea, select {
+      width:100%; padding:8px 10px; border:1px solid #1c2434; border-radius:6px;
+      background:#090d14; color:#d6e3f3; font-size:13px; box-sizing:border-box;
+      transition:border-color .15s;
+    }
+    input[type=text]:focus, textarea:focus, select:focus {
+      outline:none; border-color:#2a5a8c;
+    }
+    input[type=checkbox] { width:auto; accent-color:#3a7fd5; cursor:pointer; }
+
+    /* ── Section divider ──────────────────────────────────── */
+    .section-sep {
+      border:none; border-top:1px solid #1c2434;
+      margin:20px 0; position:relative;
+    }
+    .section-sep::after {
+      content: attr(data-label);
+      position:absolute; top:-9px; left:50%; transform:translateX(-50%);
+      background:#0b0f14; padding:0 10px; color:#9aa8bd; font-size:11px;
+      text-transform:uppercase; letter-spacing:.06em;
+    }
+
+    /* ── Create Rule form ─────────────────────────────────── */
+    .form-row   { display:grid; grid-template-columns:1fr 180px; gap:12px; margin-bottom:12px; }
+    .form-field { margin-bottom:12px; }
+
+    /* Log lines list */
+    .log-lines  { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+    .log-line   {
+      display:flex; align-items:center; gap:8px;
+      background:#090d14; border:1px solid #1c2434; border-radius:6px;
+      padding:4px 8px; transition:border-color .15s;
+    }
+    .log-line:focus-within { border-color:#2a5a8c; }
+    .log-line .line-num {
+      font-size:10px; color:#4a5a6e; min-width:18px; text-align:right;
+      font-variant-numeric:tabular-nums; user-select:none;
+    }
+    .log-line input[type=text] {
+      flex:1; border:none; background:transparent; padding:5px 4px;
+      color:#d6e3f3; font-size:13px;
+    }
+    .log-line input[type=text]:focus { outline:none; }
+    .log-line .del-line {
+      background:none; border:none; color:#5c3030; cursor:pointer;
+      font-size:15px; padding:2px 4px; line-height:1; transition:color .15s;
+    }
+    .log-line .del-line:hover { color:#cc4444; }
+
+    /* Add line button */
+    .add-line-btn {
+      display:flex; align-items:center; gap:6px;
+      background:none; border:1px dashed #2a3550; border-radius:6px;
+      color:#4a6a8a; font-size:12px; padding:6px 10px; cursor:pointer;
+      width:100%; transition:border-color .15s, color .15s;
+    }
+    .add-line-btn:hover { border-color:#3a7fd5; color:#7ab0e0; }
+    .add-line-btn .plus { font-size:16px; line-height:1; }
+
+    /* Flags row */
+    .flags-row  { display:flex; gap:24px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+    .flag-item  { display:flex; align-items:center; gap:7px; font-size:13px; color:#c8d8ea; cursor:pointer; }
+    .flag-item input { margin:0; }
+
+    /* ── Use Cases list ───────────────────────────────────── */
+    .uc-list    { display:flex; flex-direction:column; gap:10px; }
+    .uc-item    {
+      background:#090d14; border:1px solid #1c2434; border-radius:8px;
+      padding:12px 14px; display:flex; align-items:flex-start; justify-content:space-between;
+      gap:12px;
+    }
+    .uc-item:hover { border-color:#2a3550; }
+    .uc-left    { flex:1; min-width:0; }
+    .uc-title   { font-size:14px; color:#c8dff5; font-weight:600; margin-bottom:4px; }
+    .uc-meta    { font-size:11px; color:#4a6a8a; margin-bottom:8px; }
+    .uc-rules   { display:flex; flex-direction:column; gap:3px; }
+    .uc-rule-row {
+      display:flex; align-items:center; gap:8px; font-size:12px; color:#9aa8bd;
+      padding:3px 0; border-bottom:1px solid #111926;
+    }
+    .uc-rule-row:last-child { border-bottom:none; }
+    .uc-rule-num { color:#3a5a7a; min-width:20px; font-size:11px; text-align:right; }
+    .uc-rule-msg { flex:1; color:#b8c7dc; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    /* ── Modal ────────────────────────────────────────────── */
+    .modal.hidden { display:none; }
+    .modal { position:fixed; inset:0; z-index:9999; }
+    .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.6); }
+    .modal-panel {
+      position:relative; max-width:760px; width:92%;
+      margin:5vh auto; background:#0f1521;
+      border:1px solid #1c2434; border-radius:10px;
+      display:flex; flex-direction:column; max-height:90vh;
+    }
+    .modal-header {
+      padding:12px 16px; border-bottom:1px solid #1c2434;
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .modal-header h3 { margin:0; color:#b8c7dc; font-size:14px; letter-spacing:.04em; text-transform:uppercase; }
+    .modal-footer { padding:10px 14px; border-top:1px solid #1c2434; display:flex; gap:8px; justify-content:flex-end; }
+    .modal-body   { padding:16px; overflow:auto; flex:1; }
+
+    /* edit modal log lines */
+    .edit-lines { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+    .edit-line  {
+      display:flex; align-items:center; gap:8px;
+      background:#090d14; border:1px solid #1c2434; border-radius:6px; padding:4px 8px;
+      transition:border-color .15s;
+    }
+    .edit-line:focus-within { border-color:#2a5a8c; }
+    .edit-line .line-num { font-size:10px; color:#4a5a6e; min-width:18px; text-align:right; user-select:none; }
+    .edit-line input[type=text] { flex:1; border:none; background:transparent; padding:5px 4px; color:#d6e3f3; font-size:13px; }
+    .edit-line input[type=text]:focus { outline:none; }
+    .edit-line .del-line { background:none; border:none; color:#5c3030; cursor:pointer; font-size:15px; padding:2px 4px; transition:color .15s; }
+    .edit-line .del-line:hover { color:#cc4444; }
+    .edit-flags { display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:12px; font-size:13px; color:#c8d8ea; }
+    .edit-flags label { display:flex; align-items:center; gap:7px; cursor:pointer; margin:0; text-transform:none; letter-spacing:0; font-size:13px; color:#c8d8ea; }
+    .edit-flags input { width:auto; margin:0; }
+
+    /* Flags inside a log line */
+    .log-line .line-flags {
+      display:flex; gap:10px; align-items:center; flex-shrink:0;
+      border-left:1px solid #1c2434; padding-left:10px; margin-left:4px;
+    }
+    .log-line .line-flag {
+      display:flex; align-items:center; gap:4px;
+      font-size:11px; color:#6a8aaa; cursor:pointer; white-space:nowrap;
+    }
+    .log-line .line-flag input { width:auto; margin:0; accent-color:#3a7fd5; }
+    .log-line .line-flag:hover { color:#9abbd8; }
+
+    /* edit modal per-line flags */
+    .edit-line .line-flags {
+      display:flex; gap:10px; align-items:center; flex-shrink:0;
+      border-left:1px solid #1c2434; padding-left:10px; margin-left:4px;
+    }
+    .edit-line .line-flag {
+      display:flex; align-items:center; gap:4px;
+      font-size:11px; color:#6a8aaa; cursor:pointer; white-space:nowrap;
+    }
+    .edit-line .line-flag input { width:auto; margin:0; accent-color:#3a7fd5; }
+    .edit-line .line-flag:hover { color:#9abbd8; }
+
+    /* hits modal */
+    .kv { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+    .timeline { margin-top:6px; border-left:2px solid #1c2434; padding-left:12px; }
+    .timeline .item { margin-bottom:12px; }
+    .timeline .ts   { color:#9aa8bd; font-size:11px; margin-bottom:2px; }
+    .timeline .msg  { color:#dbe7ff; font-size:13px; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Nav -->
+  <nav class="top-nav">
+    <a href="/">Dashboard</a>
+    <a href="/correlation.html" class="active">Correlation Rules</a>
+    <a href="/artifacts.html">Artifacts</a>
+    <a href="/alerts.html">Alerts</a>
+    <a href="/logs.html">Logs</a>
+    <a href="/reports.html">Reports</a>
+    <a href="/clients.html">Clients</a>
+    <a href="/users.html">Users</a>
+    <a href="/settings.html">Settings</a>
+    <button id="reloadRulesBtn" class="btn small" style="margin-left:auto">↺ Reload Rules</button>
+    <div class="noti-wrap">
+      <button id="notiBell" class="bell" aria-label="Notifications">
+        <span class="bell-icon">🔔</span>
+        <span id="notiBadge" class="badge">0</span>
+      </button>
+      <div id="notiMenu" class="dropdown hidden" role="menu" aria-hidden="true">
+        <div class="dropdown-header">Notifications</div>
+        <div id="notiList" class="dropdown-list"></div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Tab bar -->
+  <div class="tabs">
+    <button class="tab active" data-tab="hitsPane">Hits</button>
+    <button class="tab" data-tab="managePane">Manage Rules</button>
+  </div>
+
+  <!-- ═══════════════════ HITS PANE ═══════════════════ -->
+  <div class="pane active tabpanes" id="hitsPane">
+    <div class="card">
+      <h3>Recent Correlation Hits</h3>
+      <p class="muted">Latest un/acknowledged correlation alerts from the <code>alerts</code> / <code>alert_occurrences</code> tables.</p>
+      <div id="hitsEmpty" class="empty" style="display:none">No correlation alerts found.</div>
+      <table class="table" id="hitsTable">
+        <thead>
+          <tr>
+            <th>ID</th><th>Severity</th><th>Source IP</th><th>Case Name</th>
+            <th>Active</th><th>Ack</th><th>Last Seen</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ MANAGE PANE ═══════════════════ -->
+  <div class="pane tabpanes" id="managePane">
+
+    <!-- ─── CREATE / EDIT FORM ─── -->
+    <div class="card" id="ruleFormCard">
+      <h3 id="formCardTitle">Create New Rule</h3>
+
+      <!-- Row 1: Case Name + Entity Field -->
+      <div class="form-row">
+        <div class="form-field" style="margin:0">
+          <label for="ucName">Case Name</label>
+          <input type="text" id="ucName" placeholder="e.g., DDOS_Attack">
+        </div>
+        <div class="form-field" style="margin:0">
+          <label for="ucEntity">Entity Field</label>
+          <select id="ucEntity">
+            <option value="ip" selected>ip</option>
+            <option value="user">user</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 2: Log lines -->
+      <div class="form-field">
+        <label>Log Lines <span class="muted" style="text-transform:none;letter-spacing:0">(one per rule step, in order)</span></label>
+        <div class="log-lines" id="logLinesList">
+          <!-- lines injected by JS -->
+        </div>
+        <button type="button" class="add-line-btn" id="addLineBtn">
+          <span class="plus">＋</span> Add log line
+        </button>
+      </div>
+
+      <!-- Row 3: Action buttons -->
+      <div style="display:flex; gap:10px; align-items:center">
+        <button class="btn primary" id="btnSaveUC">Save Rule</button>
+        <button class="btn" id="btnCancelEdit" style="display:none">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ─── SECTION DIVIDER ─── -->
+    <hr class="section-sep" data-label="Use Cases &amp; Rules">
+
+    <!-- ─── USE CASES LIST (read-only) ─── -->
+    <div class="card">
+      <h3>Use Cases &amp; Rules</h3>
+      <div id="useCasesList" class="uc-list">
+        <div class="empty">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ EDIT USE CASE MODAL ═══════════ -->
+  <div id="editModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 id="editModalTitle">Edit Use Case</h3>
+        <button id="editModalClose" class="btn small">✕</button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Case name + entity -->
+        <div class="form-row" style="margin-bottom:14px">
+          <div>
+            <label for="editUcName">Case Name</label>
+            <input type="text" id="editUcName" placeholder="e.g., DDOS_Attack">
+          </div>
+          <div>
+            <label for="editUcEntity">Entity Field</label>
+            <select id="editUcEntity">
+              <option value="ip">ip</option>
+              <option value="user">user</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Existing rules -->
+        <label>Rules <span class="muted" style="text-transform:none;letter-spacing:0">(edit text, reorder by drag, delete with ✕)</span></label>
+        <div class="edit-lines" id="editLinesList"></div>
+
+        <!-- Add rule to case -->
+        <button type="button" class="add-line-btn" id="editAddLineBtn">
+          <span class="plus">＋</span> Add another log line
+        </button>
+      </div>
+      <div class="modal-footer">
+        <button class="btn danger small" id="editDeleteUC">Delete Use Case</button>
+        <button class="btn primary" id="editSaveBtn">Save Changes</button>
+        <button class="btn small" id="editCancelBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ HIT DETAIL MODAL ═══════════ -->
+  <div id="hitModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="hitModalTitle">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 id="hitModalTitle">Correlation Details</h3>
+        <button id="hitModalClose" class="btn small">✕</button>
+      </div>
+      <div id="hitModalBody" class="modal-body"></div>
+      <div class="modal-footer">
+        <button id="hitAckBtn" class="btn primary">Acknowledge</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/correlation.js" defer></script>
+</body>
+</html>

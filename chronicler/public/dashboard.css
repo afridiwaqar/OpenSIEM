@@ -1,0 +1,362 @@
+/* ============================================================
+   OpenSIEM Atom — dashboard.css
+   Theme: Ray Palmer / The Atom (DC Comics)
+
+   The costume is split exactly half-blue / half-red:
+     Blue = structure, navigation, panels, borders
+     Red  = alerts, severity, active states, highlights, accent lines
+
+   Palette:
+     --blue-deep:   #0a1535  (cowl / upper suit)
+     --blue-mid:    #1a3a8f  (cobalt blue)
+     --blue-bright: #3d6be8  (atomic whirl logo)
+     --red-deep:    #3a0810  (deep crimson shadow)
+     --red-mid:     #b01828  (costume red)
+     --red-bright:  #e8253a  (energy red — active/alert)
+     --bg-base:     #080e1e  (Microverse)
+     --text:        #d4e0ff  (White Dwarf)
+   ============================================================ */
+
+:root {
+  --bg-deep:       #050810;
+  --bg-base:       #080e1e;
+  --bg-panel:      #0d1528;
+  --bg-raised:     #132038;
+  --bg-hover:      #1a2a4a;
+
+  --border:        #1a2a48;
+  --border-blue:   #2a4888;
+  --border-red:    #6a1020;
+
+  --blue-deep:     #0a1535;
+  --blue-mid:      #1a3a8f;
+  --blue-bright:   #3d6be8;
+  --blue-glow:     #6090ff;
+
+  --red-deep:      #3a0810;
+  --red-mid:       #b01828;
+  --red-bright:    #e8253a;
+  --red-glow:      #ff4060;
+
+  --text-primary:  #d4e0ff;
+  --text-muted:    #6a82b8;
+  --text-dim:      #384868;
+
+  --sev-critical:  #ff3050;
+  --sev-high:      #ff6820;
+  --sev-mid:       #ffb830;
+  --sev-low:       #30b8ff;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, 'Segoe UI', Arial, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* ══════════════════════════════════════════════
+   TOP NAV
+   Blue upper half, red lower border — the exact
+   costume split line between blue torso and red legs
+   ══════════════════════════════════════════════ */
+.top-nav {
+  display: flex; gap: 10px; align-items: center;
+  padding: 0 14px; height: 50px;
+  background: linear-gradient(180deg, #0d1840 0%, var(--blue-deep) 100%);
+  border-bottom: 3px solid var(--red-mid);
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 2px 16px rgba(176,24,40,.3);
+}
+
+.top-nav a {
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  transition: all .15s;
+}
+.top-nav a:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+/* Active nav item — red highlight, matching the costume's red panels */
+.top-nav a.active {
+  background: var(--red-deep);
+  color: var(--red-glow);
+  border: 1px solid var(--red-mid);
+  box-shadow: 0 0 10px rgba(232,37,58,.25);
+}
+
+/* ── Buttons ── */
+.btn.small {
+  padding: 5px 11px;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border-blue);
+  border-radius: 6px; cursor: pointer; font-size: 12px;
+  transition: filter .15s;
+}
+.btn.small:hover { filter: brightness(1.2); }
+
+/* ── EPS card — blue pill ── */
+.eps-card {
+  margin-left: 10px;
+  background: var(--blue-deep);
+  border: 1px solid var(--blue-bright);
+  padding: 4px 12px; border-radius: 20px;
+  font-weight: 700; font-size: 12px;
+  color: var(--blue-glow);
+}
+
+/* ══════════════════════════════════════════════
+   NOTIFICATION BELL
+   Badge is red (danger/alert = red on the costume)
+   ══════════════════════════════════════════════ */
+.noti-wrap { margin-left: auto; position: relative; }
+
+.bell {
+  position: relative;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-blue);
+  color: var(--text-primary);
+  border-radius: 50px;
+  width: 40px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: border-color .15s;
+}
+.bell:hover { border-color: var(--blue-bright); }
+
+.badge {
+  position: absolute; top: -5px; right: -5px;
+  background: var(--red-bright);
+  color: #fff; border-radius: 10px;
+  padding: 1px 5px; font-size: 11px;
+  min-width: 17px; text-align: center; font-weight: 700;
+  box-shadow: 0 0 8px rgba(232,37,58,.7);
+}
+
+.dropdown {
+  position: absolute; right: 0; top: 42px;
+  width: 340px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-blue);
+  border-top: 3px solid var(--red-mid);   /* red top = alert origin */
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.7);
+}
+.dropdown.hidden { display: none; }
+.dropdown-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700; font-size: 13px;
+  color: var(--red-glow);               /* red header = alerts */
+  letter-spacing: .04em;
+}
+.dropdown-list { max-height: 360px; overflow: auto; }
+
+.noti-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.noti-item:last-child { border-bottom: none; }
+.noti-kind { font-size: 12px; color: var(--text-muted); }
+.noti-sev.high     { color: var(--sev-high); }
+.noti-sev.critical { color: var(--sev-critical); font-weight: 700; }
+.noti-ack {
+  margin-left: auto;
+  background: var(--red-deep); border: 1px solid var(--red-mid);
+  border-radius: 5px; color: var(--red-glow);
+  padding: 3px 8px; cursor: pointer; font-size: 11px;
+}
+
+/* ══════════════════════════════════════════════
+   ALERT RIBBON
+   Red background on the ribbon — this is the
+   "alert zone", matching the red lower costume
+   ══════════════════════════════════════════════ */
+.alert-ribbon {
+  display: flex; gap: 8px;
+  padding: 7px 14px;
+  background: linear-gradient(90deg, var(--red-deep) 0%, #1a0810 60%, var(--bg-deep) 100%);
+  border-bottom: 1px solid var(--border-red);
+  min-height: 42px; align-items: center; overflow-x: auto;
+}
+
+.alert {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 20px;
+  white-space: nowrap; font-size: 12px; font-weight: 600;
+  border: 1px solid transparent; text-decoration: none;
+  transition: filter .15s;
+}
+.alert:hover { filter: brightness(1.25); }
+.alert.low      { background: #061525; border-color: #0a2840; color: var(--sev-low); }
+.alert.mid      { background: #1a1200; border-color: #382800; color: var(--sev-mid); }
+.alert.high     { background: #200800; border-color: #480e00; color: var(--sev-high); }
+.alert.critical {
+  background: #200005; border-color: var(--red-mid);
+  color: var(--sev-critical);
+  box-shadow: 0 0 10px rgba(232,37,58,.35);
+}
+
+/* ══════════════════════════════════════════════
+   SEARCH BAR
+   ══════════════════════════════════════════════ */
+.search-bar {
+  display: flex; gap: 8px;
+  padding: 9px 14px;
+  background: var(--bg-deep);
+  border-bottom: 1px solid var(--border);
+}
+.search-bar input {
+  flex: 1; padding: 9px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-primary); font-size: 13px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.search-bar input:focus {
+  outline: none;
+  border-color: var(--blue-bright);
+  box-shadow: 0 0 0 2px rgba(61,107,232,.2);
+}
+.search-bar button {
+  padding: 8px 16px;
+  background: var(--blue-mid);
+  color: #fff;
+  border: 1px solid var(--blue-bright);
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+  transition: filter .15s;
+}
+.search-bar button:hover  { filter: brightness(1.15); }
+.search-bar button.active {
+  background: var(--red-mid);
+  border-color: var(--red-bright);
+  box-shadow: 0 0 8px rgba(232,37,58,.4);
+}
+
+/* ══════════════════════════════════════════════
+   MAIN GRID — Live Logs + Client Health
+   Blue top-accent on the log panel (blue = data flow)
+   Red top-accent on the client panel (red = system status)
+   ══════════════════════════════════════════════ */
+.main-grid {
+  display: grid; grid-template-columns: 2fr 1fr;
+  gap: 12px; padding: 12px;
+}
+.terminal  { min-width: 0; }
+.side-panel { min-width: 0; }
+
+.terminal header {
+  font-weight: 700; margin-bottom: 8px;
+  color: var(--blue-glow);
+  font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  border-bottom: 1px solid var(--border-blue);
+  padding-bottom: 5px;
+}
+.side-panel header {
+  font-weight: 700; margin-bottom: 8px;
+  color: var(--red-glow);                /* red = system health status */
+  font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  border-bottom: 1px solid var(--border-red);
+  padding-bottom: 5px;
+}
+
+.console {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--blue-mid);
+  height: 50vh;
+  overflow-x: auto; overflow-y: auto;
+  padding: 8px; border-radius: 8px;
+  line-height: 1.4;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  white-space: pre; word-wrap: normal;
+  max-width: 100%;
+}
+
+.log.info     { color: #7090c0; }
+.log.mid      { color: var(--sev-mid); }
+.log.high,
+.log.error    { color: var(--sev-high); }
+.log.critical {
+  color: var(--sev-critical); font-weight: 700;
+  text-shadow: 0 0 8px rgba(255,48,80,.4);
+}
+
+.side-panel { position: relative; }
+
+.client-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--red-mid);   /* red left stripe = health status */
+  padding: 10px 12px; border-radius: 8px; margin-bottom: 8px;
+}
+.client-card .svc.ok   { color: #30c870; }
+.client-card .svc.down { color: var(--red-bright); }
+
+/* ══════════════════════════════════════════════
+   CHARTS GRID
+   Alternate blue/red top borders so the grid
+   reads as both colours together
+   ══════════════════════════════════════════════ */
+.charts-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 12px; padding: 12px;
+}
+
+.chart-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px;
+  height: 260px; max-height: 260px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  flex-shrink: 0; contain: strict;
+}
+
+/* Alternate blue/red top borders across the chart grid */
+.chart-card:nth-child(odd)  { border-top: 2px solid var(--blue-mid); }
+.chart-card:nth-child(even) { border-top: 2px solid var(--red-mid); }
+
+.chart-card canvas {
+  display: block; flex: 1 1 0; min-height: 0;
+  width: 100% !important; height: 0 !important; max-height: 100%;
+}
+
+.chart-title {
+  font-size: 11px; font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin-bottom: 8px; flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════
+   SCROLLBARS
+   ══════════════════════════════════════════════ */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--blue-deep); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--red-mid); } /* blue→red on hover */
+
+/* ══════════════════════════════════════════════
+   RESPONSIVE
+   ══════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .main-grid { grid-template-columns: 1.5fr 1fr; }
+  .console   { height: 45vh; }
+}
+@media (max-width: 768px) {
+  .main-grid { grid-template-columns: 1fr; }
+  .terminal, .side-panel { min-width: 0; }
+  .console { height: 40vh; }
+  .charts-grid { grid-template-columns: 1fr; }
+  .top-nav { flex-wrap: wrap; height: auto; padding: 8px 14px; gap: 6px; }
+}

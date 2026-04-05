@@ -1,0 +1,17 @@
+<?php
+/*
+ OpenSIEM - Security Information & Event Management
+ Copyright (c) 2024–present
+ Licensed under GNU GPL v3.0
+ See LICENSE for details.
+*/
+require_once __DIR__ . '/../../config/auth.php';
+if (current_user()) {
+  json_out([
+    'ok'=>true,
+    'user'=>current_user(),
+    'permissions'=>$_SESSION['permissions'],
+    'csrf'=>csrf_token(),
+  ]);
+}
+json_out(['ok'=>false], 200);

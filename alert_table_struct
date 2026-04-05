@@ -1,0 +1,14 @@
+CREATE TABLE alerts (
+    id SERIAL PRIMARY KEY,  -- auto-incrementing ID
+    alert_id CHAR(20) NOT NULL,  -- e.g., 'alert1'
+    alert_type VARCHAR(50) NOT NULL,  -- e.g., 'IP', 'artifact'
+    severity VARCHAR(20) NOT NULL,  -- e.g., 'high', 'low', 'critical'
+    is_active BOOLEAN DEFAULT TRUE,  -- active/inactive flag
+    count INT DEFAULT 0,  -- number of occurrences
+    source_ip INET,  -- proper PostgreSQL type for IP addresses
+    acknowledged_time TIMESTAMP,  -- when alert was acknowledged
+    admin_note TEXT,  -- free-form notes
+    fk_msg_id INT,  -- foreign key to message table
+    CONSTRAINT fk_message FOREIGN KEY (fk_msg_id) REFERENCES message(message_id)
+);
+

@@ -1,0 +1,265 @@
+<!--
+ OpenSIEM - Security Information & Event Management
+ Copyright (c) 2024–present
+ Licensed under GNU GPL v3.0
+ See LICENSE for details.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OpenSIEM • Reports</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/dashboard.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    /* ── Page layout ── */
+    .page      { padding:14px; max-width:1400px; }
+
+    /* ── Toolbar ── */
+    .toolbar   { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+                 padding:10px 14px; background:#0b0f14; border-bottom:1px solid #1c2434; }
+    .toolbar select, .toolbar button {
+      padding:7px 12px; border-radius:6px; font-size:13px; cursor:pointer;
+      border:1px solid #2a3550; background:#1c2434; color:#e9eef5;
+    }
+    .toolbar select:focus { outline:none; border-color:#2a5a8c; }
+    .toolbar button:hover  { filter:brightness(1.15); }
+    .toolbar button.primary { background:#1a3a5c; border-color:#2a5a8c; color:#c8dff5; }
+    .toolbar-title { font-size:15px; font-weight:700; color:#b8c7dc; margin-right:6px; }
+    .toolbar-sep   { color:#2a3550; font-size:18px; }
+    #lastUpdated   { font-size:11px; color:#4a6a8a; margin-left:auto; }
+    #loadingBadge  { font-size:11px; color:#ffd66e; display:none; }
+
+    /* ── KPI strip ── */
+    .kpi-strip { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+                 gap:10px; margin-bottom:14px; }
+    .kpi-card  { background:#0f1521; border:1px solid #1c2434; border-radius:8px;
+                 padding:12px 14px; }
+    .kpi-label { font-size:10px; color:#4a6a8a; text-transform:uppercase;
+                 letter-spacing:.07em; margin-bottom:6px; }
+    .kpi-value { font-size:26px; font-weight:700; color:#c8dff5; line-height:1; }
+    .kpi-sub   { font-size:11px; color:#6a8aaa; margin-top:4px; }
+    .kpi-card.red    { border-color:#5c2020; }
+    .kpi-card.orange { border-color:#5c3a10; }
+    .kpi-card.green  { border-color:#1a4020; }
+    .kpi-card.blue   { border-color:#1a3a5c; }
+
+    /* ── Section headings ── */
+    .section-head { font-size:12px; font-weight:700; color:#9aa8bd;
+                    text-transform:uppercase; letter-spacing:.07em;
+                    margin:18px 0 10px; padding-bottom:6px;
+                    border-bottom:1px solid #1c2434; }
+
+    /* ── Chart grid ── */
+    .charts-grid { display:grid; gap:12px; margin-bottom:14px; }
+    .charts-grid.cols2 { grid-template-columns:1fr 1fr; }
+    .charts-grid.cols3 { grid-template-columns:1fr 1fr 1fr; }
+
+    .chart-card { background:#0f1521; border:1px solid #1c2434; border-radius:8px;
+                  padding:12px; display:flex; flex-direction:column; height:260px; }
+    .chart-card.tall  { height:320px; }
+    .chart-card.short { height:200px; }
+    .chart-title { font-size:12px; font-weight:700; color:#b8c7dc;
+                   margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em; }
+    .chart-card canvas { flex:1 1 0; min-height:0; width:100% !important;
+                         height:0 !important; max-height:100%; display:block; }
+
+    /* ── Tables ── */
+    .data-card { background:#0f1521; border:1px solid #1c2434; border-radius:8px;
+                 padding:14px; margin-bottom:12px; }
+    .table     { width:100%; border-collapse:collapse; }
+    .table th, .table td { border-bottom:1px solid #1c2434; padding:8px;
+                           text-align:left; font-size:12px; }
+    .table th  { color:#9aa8bd; font-size:10px; text-transform:uppercase;
+                 letter-spacing:.06em; }
+    .table tbody tr:hover { background:#0f1a28; }
+
+    /* severity badges */
+    .sev { display:inline-block; padding:1px 7px; border-radius:10px;
+           font-size:10px; font-weight:700; }
+    .sev-critical { background:#4a0a0a; color:#ff6b6b; }
+    .sev-high     { background:#3a1a0a; color:#ff9a3c; }
+    .sev-mid      { background:#1a2a1a; color:#7ecb7e; }
+    .sev-low      { background:#1a1a2a; color:#7eb3cb; }
+
+    /* MTTA pill */
+    .mtta-pill { display:inline-block; padding:4px 14px; border-radius:20px;
+                 font-size:20px; font-weight:700; background:#0f2030;
+                 border:1px solid #2a5a8c; color:#6ea8fe; }
+
+    @media (max-width:900px) {
+      .charts-grid.cols2, .charts-grid.cols3 { grid-template-columns:1fr; }
+      .kpi-strip { grid-template-columns:repeat(2,1fr); }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="top-nav">
+    <a href="/">Dashboard</a>
+    <a href="/correlation.html">Correlation Rules</a>
+    <a href="/artifacts.html">Artifacts</a>
+    <a href="/alerts.html">Alerts</a>
+    <a href="/logs.html">Logs</a>
+    <a class="active" href="/reports.html">Reports</a>
+    <a href="/clients.html">Clients</a>
+    <a href="/users.html">Users</a>
+    <a href="/settings.html">Settings</a>
+    <div class="noti-wrap" style="margin-left:auto">
+      <button id="notiBell" class="bell" aria-label="Notifications">
+        <span class="bell-icon">🔔</span>
+        <span id="notiBadge" class="badge">0</span>
+      </button>
+      <div id="notiMenu" class="dropdown hidden" role="menu" aria-hidden="true">
+        <div class="dropdown-header">Notifications</div>
+        <div id="notiList" class="dropdown-list"></div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span class="toolbar-title">Security Report</span>
+    <span class="toolbar-sep">|</span>
+    <label style="font-size:12px;color:#9aa8bd;margin:0">Period:</label>
+    <select id="periodSelect">
+      <option value="24">Last 24 hours</option>
+      <option value="48">Last 48 hours</option>
+      <option value="168" selected>Last 7 days</option>
+      <option value="336">Last 14 days</option>
+      <option value="720">Last 30 days</option>
+    </select>
+    <button id="btnRefresh">↺ Refresh</button>
+    <button id="btnExportPdf" class="primary">⬇ Export PDF</button>
+    <span id="loadingBadge">⏳ Loading…</span>
+    <span id="lastUpdated"></span>
+  </div>
+
+  <div class="page" id="reportBody">
+
+    <!-- ══ SECTION 1: Executive Summary ══ -->
+    <div class="section-head">Executive Summary</div>
+
+    <div class="kpi-strip">
+      <div class="kpi-card red">
+        <div class="kpi-label">Critical Alerts</div>
+        <div class="kpi-value" id="kCritical">—</div>
+        <div class="kpi-sub">unacknowledged</div>
+      </div>
+      <div class="kpi-card orange">
+        <div class="kpi-label">High Alerts</div>
+        <div class="kpi-value" id="kHigh">—</div>
+        <div class="kpi-sub">unacknowledged</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Alerts</div>
+        <div class="kpi-value" id="kTotal">—</div>
+        <div class="kpi-sub" id="kTotalSub">in period</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-label">Acknowledged</div>
+        <div class="kpi-value" id="kAcked">—</div>
+        <div class="kpi-sub" id="kAckedPct">—% of total</div>
+      </div>
+      <div class="kpi-card blue">
+        <div class="kpi-label">Avg Ack Time</div>
+        <div class="kpi-value" id="kMtta">—</div>
+        <div class="kpi-sub">minutes (MTTA)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Log Messages</div>
+        <div class="kpi-value" id="kMessages">—</div>
+        <div class="kpi-sub">in period</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Correlation Hits</div>
+        <div class="kpi-value" id="kCorrelation">—</div>
+        <div class="kpi-sub">rule triggers</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">IOC Hits</div>
+        <div class="kpi-value" id="kArtifact">—</div>
+        <div class="kpi-sub">artifact matches</div>
+      </div>
+    </div>
+
+    <!-- ══ SECTION 2: Alert Activity ══ -->
+    <div class="section-head">Alert Activity</div>
+    <div class="charts-grid cols2">
+      <div class="chart-card tall">
+        <div class="chart-title">Alert Volume Over Time</div>
+        <canvas id="chartAlertVolume"></canvas>
+      </div>
+      <div class="chart-card tall">
+        <div class="chart-title">Alerts by Severity</div>
+        <canvas id="chartAlertSev"></canvas>
+      </div>
+    </div>
+    <div class="charts-grid cols2">
+      <div class="chart-card">
+        <div class="chart-title">Alert Type Distribution</div>
+        <canvas id="chartAlertType"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Log Message Volume Over Time</div>
+        <canvas id="chartMsgVolume"></canvas>
+      </div>
+    </div>
+
+    <!-- ══ SECTION 3: Threat Intelligence ══ -->
+    <div class="section-head">Threat Intelligence</div>
+    <div class="charts-grid cols3">
+      <div class="chart-card">
+        <div class="chart-title">Top Attacked Systems</div>
+        <canvas id="chartTopIPs"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Correlation Rules — Top Hits</div>
+        <canvas id="chartCorrelation"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Artifact IOC Hits by Severity</div>
+        <canvas id="chartArtifactSev"></canvas>
+      </div>
+    </div>
+
+    <!-- ══ SECTION 4: Open Critical / High Alerts ══ -->
+    <div class="section-head">Open Critical &amp; High Alerts</div>
+    <div class="data-card">
+      <div id="unackedEmpty" style="color:#9aa8bd;font-size:13px;display:none">
+        ✔ No unacknowledged critical or high alerts. Good standing.
+      </div>
+      <table class="table" id="unackedTable">
+        <thead>
+          <tr>
+            <th>ID</th><th>Type</th><th>Severity</th>
+            <th>Source IP</th><th>Hits</th><th>First Seen</th><th>Last Seen</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- ══ SECTION 5: Top IOCs ══ -->
+    <div class="section-head">Top Triggered IOCs</div>
+    <div class="data-card">
+      <div id="iocEmpty" style="color:#9aa8bd;font-size:13px;display:none">
+        No artifact hits in this period.
+      </div>
+      <table class="table" id="iocTable">
+        <thead>
+          <tr><th>Artifact / IOC</th><th>Severity</th><th>Hits</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+  </div><!-- /.page -->
+
+  <script src="/reports.js"></script>
+</body>
+</html>

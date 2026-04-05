@@ -1,0 +1,117 @@
+<!--
+ OpenSIEM - Security Information & Event Management
+ Copyright (c) 2024–present
+ Licensed under GNU GPL v3.0
+ See LICENSE for details.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Chronicler • Logs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/dashboard.css">
+  <style>
+    .wrap { padding:12px; display:grid; grid-template-columns: 1fr 320px; gap:12px; }
+    /* min-width:0 on BOTH columns is the key CSS grid fix —
+       without it grid children won't shrink below their content width */
+    .panel { background:#0f1521; border:1px solid #1c2434; border-radius:8px; padding:12px; min-width:0; overflow:hidden; }
+    .panel h3 { margin:0 0 6px; color:#b8c7dc; }
+    /* Console: fixed height, horizontal scroll for long lines, never expands the column */
+    .console {
+      height:60vh;
+      overflow-x: auto;
+      overflow-y: auto;
+      white-space: pre;
+      word-wrap: normal;
+      /* Critical: width must be constrained to panel, not content */
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      display: block;
+    }
+    .muted { color:#9aa8bd; font-size:12px; }
+    .table { width:100%; border-collapse: collapse; }
+    .table th, .table td { border-bottom:1px solid #1c2434; padding:8px; text-align:left; font-size:13px; }
+    .table th { color:#9aa8bd; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+
+    /* Search bar overrides for the logs page */
+    .search-bar { display:flex; gap:8px; padding:10px 14px; background:#0b0f14; border-bottom:1px solid #1c2434; align-items:center; flex-wrap:wrap; }
+    .search-bar input { flex:1; min-width:200px; padding:9px 10px; border-radius:6px; border:1px solid #1c2434; background:#0f1521; color:#d6e3f3; font-size:13px; }
+    .search-bar input:focus { outline:none; border-color:#2a5a8c; }
+    .search-bar button { padding:8px 14px; background:#1c2434; color:#e9eef5; border:1px solid #2a3550; border-radius:6px; cursor:pointer; font-size:13px; }
+    .search-bar button:hover { filter:brightness(1.1); }
+    .search-bar button.active { background:#1a3a5c; border-color:#2a5a8c; color:#c8dff5; }
+
+    .regex-hint { font-size:11px; color:#4a6a8a; padding:0 4px; white-space:nowrap; }
+    .regex-hint code { color:#7ab0d8; }
+
+    /* Search result severity colours */
+    .level-high     { color:#ff9a9a; }
+    .level-critical { color:#ff5b5b; font-weight:600; }
+    .level-mid      { color:#ffd66e; }
+    .level-info     { color:#c9d7ef; }
+    .err-row td { color:#ff9a9a; font-style:italic; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+  <nav class="top-nav">
+    <a href="/">Dashboard</a>
+    <a href="/correlation.html">Correlation Rules</a>
+    <a href="/artifacts.html">Artifacts</a>
+    <a href="/alerts.html">Alerts</a>
+    <a class="active" href="/logs.html">Logs</a>
+    <a href="/reports.html">Reports</a>
+    <a href="/clients.html">Clients</a>
+    <a href="/users.html">Users</a>
+    <a href="/settings.html">Settings</a>
+
+    <div class="noti-wrap" style="margin-left:auto">
+      <button id="notiBell" class="bell" aria-label="Notifications">
+        <span class="bell-icon">🔔</span>
+        <span id="notiBadge" class="badge">0</span>
+      </button>
+      <div id="notiMenu" class="dropdown hidden" role="menu" aria-hidden="true">
+        <div class="dropdown-header">Notifications</div>
+        <div id="notiList" class="dropdown-list"></div>
+      </div>
+    </div>
+  </nav>
+
+  <section class="search-bar">
+    <input id="logQuery" placeholder="Search logs… keyword, IP, or /regex/i">
+    <button id="regexToggle" title="Toggle regex mode">.*</button>
+    <button id="searchBtn">Search</button>
+    <span class="regex-hint" id="regexHint" style="display:none">
+      Regex mode — e.g. <code>192\.168\.\d+</code> or <code>fail(ed)?</code> &nbsp;• append <code>/i</code> for case-insensitive
+    </span>
+  </section>
+
+  <div class="wrap">
+    <section class="panel">
+      <h3>Live Logs</h3>
+      <pre id="liveLogs" class="console"></pre>
+    </section>
+
+    <aside class="panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <h3 style="margin:0">Search Results <span id="resCount" style="font-size:11px;color:#6a8aaa;font-weight:normal;text-transform:none;letter-spacing:0"></span></h3>
+        <button id="btnExportPdf" class="search-bar button" title="Export results to PDF"
+          style="padding:5px 11px;background:#1a3a5c;border:1px solid #2a5a8c;color:#c8dff5;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;display:none">
+          ⬇ PDF
+        </button>
+      </div>
+      <div class="muted" style="margin-bottom:6px">Up to 300 matches. Click ⬇ PDF to export.</div>
+      <table class="table" id="resTable">
+        <thead><tr><th>ID</th><th>Sev</th><th>Message</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </aside>
+  </div>
+
+  <script src="/logs.js"></script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="8eac7344-7513-4f20-b31f-5b963660f028" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/chronicler/dashboard/utils/xml_parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/chronicler/dashboard/utils/xml_parser.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/chronicler/dashboard/views.py" beforeDir="false" afterPath="$PROJECT_DIR$/chronicler/dashboard/views.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/chronicler/django_cache/76f082fdbfab3f0d24a41bf536d75d64.djcache" beforeDir="false" afterPath="$PROJECT_DIR$/chronicler/django_cache/76f082fdbfab3f0d24a41bf536d75d64.djcache" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/chronicler/django_cache/8f0861877d5132648c73da82076de642.djcache" beforeDir="false" afterPath="$PROJECT_DIR$/chronicler/django_cache/8f0861877d5132648c73da82076de642.djcache" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/chronicler/templates/base.html" beforeDir="false" afterPath="$PROJECT_DIR$/chronicler/templates/base.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/chronicler/templates/dashboard/dashboard.html" beforeDir="false" afterPath="$PROJECT_DIR$/chronicler/templates/dashboard/dashboard.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/keyword_updater.log" beforeDir="false" afterPath="$PROJECT_DIR$/keyword_updater.log" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/offsets.txt" beforeDir="false" afterPath="$PROJECT_DIR$/offsets.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stats/ClientStats.xml" beforeDir="false" afterPath="$PROJECT_DIR$/stats/ClientStats.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stats/socket_clients.xml" beforeDir="false" afterPath="$PROJECT_DIR$/stats/socket_clients.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stats/socket_global.xml" beforeDir="false" afterPath="$PROJECT_DIR$/stats/socket_global.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stats/socket_rates.xml" beforeDir="false" afterPath="$PROJECT_DIR$/stats/socket_rates.xml" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="DjangoConsoleOptions" custom-start-script="import sys; print('Python %s on %s' % (sys.version, sys.platform))&#10;import django; print('Django %s' % django.get_version())&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;if 'setup' in dir(django): django.setup()&#10;import django_manage_shell; django_manage_shell.run(PROJECT_ROOT)">
+    <option name="myCustomStartScript" value="import sys; print('Python %s on %s' % (sys.version, sys.platform))&#10;import django; print('Django %s' % django.get_version())&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;if 'setup' in dir(django): django.setup()&#10;import django_manage_shell; django_manage_shell.run(PROJECT_ROOT)" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="374" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 3
+}]]></component>
+  <component name="ProjectId" id="39JEcWe2hfVx7WTpSBHIsBo10vZ" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.OpenDjangoStructureViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "ai.playground.ignore.import.keys.banner.in.settings": "true",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "/home/waqar/OpenSIEM",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMThirdPartyAiProvidersConfigurable",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RunManager">
+    <configuration name="OpenSIEM" type="Python.DjangoServer" factoryName="Django server">
+      <module name="OpenSIEM" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="RUN_TOOL" value="" />
+      <option name="launchJavascriptDebuger" value="false" />
+      <option name="port" value="8000" />
+      <option name="host" value="" />
+      <option name="additionalOptions" value="" />
+      <option name="browserUrl" value="" />
+      <option name="runTestServer" value="false" />
+      <option name="runNoReload" value="false" />
+      <option name="useCustomRunCommand" value="false" />
+      <option name="customRunCommand" value="" />
+      <method v="2" />
+    </configuration>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-PY-253.30387.173" />
+        <option value="bundled-python-sdk-4762d8aabb82-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.30387.173" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="8eac7344-7513-4f20-b31f-5b963660f028" name="Changes" comment="" />
+      <created>1770405853195</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1770405853195</updated>
+      <workItem from="1770405854522" duration="739000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>

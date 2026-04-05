@@ -1,0 +1,5 @@
+blackip.txt
+*.pyc
+offsets.txt
+stats/socket_global.xml
+stats/socket_rates.xml

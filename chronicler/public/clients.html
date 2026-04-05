@@ -1,0 +1,94 @@
+<!--
+ OpenSIEM - Security Information & Event Management
+ Copyright (c) 2024–present
+ Licensed under GNU GPL v3.0
+ See LICENSE for details.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Chronicler • Clients</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/dashboard.css">
+  <style>
+    .page-wrap  { padding:12px; display:grid; grid-template-columns:1fr 360px; gap:12px; }
+    .panel      { background:#0f1521; border:1px solid #1c2434; border-radius:8px; padding:14px; min-width:0; }
+    .panel h3   { margin:0 0 12px; color:#b8c7dc; font-size:13px; text-transform:uppercase; letter-spacing:.06em; }
+
+    /* Client cards — auto-fill columns for any number of clients */
+    .cards-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:10px; }
+
+    .cc         { background:#090d14; border:1px solid #1c2434; border-radius:8px; padding:12px; }
+    .cc:hover   { border-color:#2a3550; }
+    .cc-head    { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+    .cc-id      { font-size:14px; font-weight:700; color:#c8dff5; }
+    .cc-name    { font-size:11px; color:#6a8aaa; }
+
+    .metric     { display:flex; justify-content:space-between; font-size:11px; color:#9aa8bd; margin-bottom:2px; }
+    .metric-val { color:#b8c7dc; }
+
+    .bar-track  { background:#1c2434; border-radius:3px; height:5px; margin-bottom:8px; overflow:hidden; }
+    .bar-fill   { height:100%; border-radius:3px; transition:width .5s ease; }
+    .bar-ok     { background:#7ecb7e; }
+    .bar-warn   { background:#ffd66e; }
+    .bar-crit   { background:#ff6b6b; }
+
+    .svc-row    { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid #1c2434; }
+    .svc-pill   { font-size:11px; padding:2px 8px; border-radius:10px; border:1px solid; }
+    .svc-pill.ok   { background:#0a1f0a; border-color:#1a4020; color:#7ecb7e; }
+    .svc-pill.down { background:#1f0a0a; border-color:#401a1a; color:#ff6b6b; }
+
+    .empty { color:#4a6a8a; font-size:13px; }
+
+    .table { width:100%; border-collapse:collapse; }
+    .table th, .table td { border-bottom:1px solid #1c2434; padding:8px; text-align:left; font-size:13px; }
+    .table th { color:#9aa8bd; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+
+    @media (max-width: 900px) { .page-wrap { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <nav class="top-nav">
+    <a href="/">Dashboard</a>
+    <a href="/correlation.html">Correlation Rules</a>
+    <a href="/artifacts.html">Artifacts</a>
+    <a href="/alerts.html">Alerts</a>
+    <a href="/logs.html">Logs</a>
+    <a href="/reports.html">Reports</a>
+    <a class="active" href="/clients.html">Clients</a>
+    <a href="/users.html">Users</a>
+    <a href="/settings.html">Settings</a>
+    <div class="noti-wrap" style="margin-left:auto">
+      <button id="notiBell" class="bell" aria-label="Notifications">
+        <span class="bell-icon">🔔</span>
+        <span id="notiBadge" class="badge">0</span>
+      </button>
+      <div id="notiMenu" class="dropdown hidden" role="menu" aria-hidden="true">
+        <div class="dropdown-header">Notifications</div>
+        <div id="notiList" class="dropdown-list"></div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page-wrap">
+    <section class="panel">
+      <h3>Client Health</h3>
+      <div id="clientCards" class="cards-grid">
+        <div class="empty">Loading…</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Top Talkers <span style="font-size:11px;color:#6a8aaa;text-transform:none;letter-spacing:0">(by messages)</span></h3>
+      <table class="table" id="topTalkers">
+        <thead><tr><th>Address</th><th>Messages</th><th>Bytes</th></tr></thead>
+        <tbody><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script src="/clients.js"></script>
+</body>
+</html>

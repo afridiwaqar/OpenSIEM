@@ -1,0 +1,90 @@
+<!--
+ OpenSIEM - Security Information & Event Management
+ Copyright (c) 2024–present
+ Licensed under GNU GPL v3.0
+ See LICENSE for details.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Chronicler • Users</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/dashboard.css">
+  <style>
+    .wrap { padding:12px; display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .panel { background:#0f1521; border:1px solid #1c2434; border-radius:8px; padding:12px; }
+    .panel h3 { margin:0 0 6px; color:#b8c7dc; }
+    .table { width:100%; border-collapse: collapse; }
+    .table th, .table td { border-bottom:1px solid #1c2434; padding:8px; text-align:left; }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .switch { display:flex; gap:8px; align-items:center; }
+    .btn { padding:6px 10px; background:#1c2434; color:#e9eef5; border:1px solid #2a3550; border-radius:6px; cursor:pointer; }
+    .btn:hover { filter:brightness(1.1); }
+    .btn.danger { background:#3a1414; border-color:#5c2020; }
+    input, select { width:100%; padding:8px; border:1px solid #1c2434; border-radius:6px; background:#0f1521; color:#d6e3f3; }
+  </style>
+</head>
+<body>
+  <nav class="top-nav">
+    <a href="/">Dashboard</a>
+    <a href="/correlation.html">Correlation Rules</a>
+    <a href="/artifacts.html">Artifacts</a>
+    <a href="/alerts.html">Alerts</a>
+    <a href="/logs.html">Logs</a>
+    <a href="/reports.html">Reports</a>
+    <a href="/clients.html">Clients</a>
+    <a class="active" href="/users.html">Users</a>
+    <a href="/settings.html">Settings</a>
+
+    <div class="noti-wrap" style="margin-left:auto">
+      <button id="notiBell" class="bell" aria-label="Notifications">
+        <span class="bell-icon">🔔</span>
+        <span id="notiBadge" class="badge">0</span>
+      </button>
+      <div id="notiMenu" class="dropdown hidden" role="menu" aria-hidden="true">
+        <div class="dropdown-header">Notifications</div>
+        <div id="notiList" class="dropdown-list"></div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="wrap">
+    <section class="panel">
+      <h3>Create / Update User</h3>
+      <form id="userForm" autocomplete="off" onsubmit="return false">
+      <div class="grid2">
+        <div><label>Username</label><input id="uName" autocomplete="username"></div>
+        <div><label>Email</label><input id="uEmail" type="email" autocomplete="email"></div>
+        <div><label>Password</label><input id="uPass" type="password" autocomplete="new-password"></div>
+        <div><label>Role</label>
+          <select id="uRole"><option value="viewer">viewer</option><option value="analyst">analyst</option><option value="admin">admin</option></select>
+        </div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap">
+        <div class="switch"><input type="checkbox" id="pCreate"><label for="pCreate">can_create</label></div>
+        <div class="switch"><input type="checkbox" id="pRead" checked><label for="pRead">can_read</label></div>
+        <div class="switch"><input type="checkbox" id="pUpdate"><label for="pUpdate">can_update</label></div>
+        <div class="switch"><input type="checkbox" id="pDelete"><label for="pDelete">can_delete</label></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button id="btnCreate" class="btn" type="button">Create</button>
+        <button id="btnUpdate" class="btn" type="button">Update</button>
+        <button id="btnClear"  class="btn" type="button" style="margin-left:auto;color:#6a8aaa">Clear</button>
+      </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h3>Users</h3>
+      <table class="table" id="uTable">
+        <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Active</th><th>Verified</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script src="/users.js"></script>
+</body>
+</html>
