@@ -1,4 +1,4 @@
-# OpenSIEM
+# OpenSIEM ⚛️
 Security Information & Event Management Platform  
 GPL‑3.0 Licensed — Open Source, Community Driven
 
@@ -32,6 +32,16 @@ OpenSIEM prioritizes **Ease**, **transparency**, **security**, and **community c
 
 ---
 
+## 📸 Snapshots
+
+![Cli Snapshots](./opensiem_images/cli-snap.png)
+![Dashboard](./opensiem_images/2_dashboard.png)
+![Alerts](./opensiem_images/alert_details.png)
+![Report Page](./opensiem_images/report_page.png)
+![Correlation Page](./opensiem_images/correlation_page.png)
+![Live Logs](./opensiem_images/live_log_page.png)
+
+---
 ## 📦 Installation
 See the **OpenSIEM Installation Manual (DOCX)** included in this release.
 
