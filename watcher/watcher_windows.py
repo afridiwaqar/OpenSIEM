@@ -25,9 +25,11 @@ from datetime import datetime
 # ADMINISTRATOR CONFIGURATION — edit this section before deploying
 # =============================================================================
 
-SERVER     = "192.168.1.10"   # IP address of the OpenSIEM server
+SERVER     = "172.16.42.3"   # IP address of the OpenSIEM server
 PORT       = 11514             # OpenSIEM TCP ingestion port
 STATE_PORT = 51780             # OpenSIEM stats/heartbeat port
+
+### Fixed
 
 CLIENT_NAME = "Windows-Workstation-01"   # Human-readable name shown in Chronicler
 
@@ -158,6 +160,10 @@ def get_local_ip():
         return _local_ip_cache
 
 
+# =============================================================================
+# Bookmark persistence
+# =============================================================================
+
 def _ensure_bookmark_dir():
     d = os.path.dirname(BOOKMARK_FILE)
     if d and not os.path.exists(d):
@@ -178,6 +184,7 @@ def load_bookmarks():
         logging.warning(f"Could not read bookmark file: {e} — starting from current position")
         return {}
 
+
 def save_bookmarks(bookmarks: dict):
     _ensure_bookmark_dir()
     tmp = BOOKMARK_FILE + ".tmp"
@@ -188,6 +195,10 @@ def save_bookmarks(bookmarks: dict):
     except Exception as e:
         logging.error(f"Failed to write bookmarks: {e}")
 
+
+# =============================================================================
+# Network sender — mirrors Linux watcher's StateHandler
+# =============================================================================
 
 class StateHandler:
     FORMAT           = "utf-8"
@@ -262,12 +273,18 @@ class StateHandler:
         if not msg:
             return
         try:
-            data = msg.encode(self.FORMAT, errors="replace") + b"\n"
+            safe = msg.replace("\r", " ").replace("\n", " ").strip()
+            data = safe.encode(self.FORMAT, errors="replace") + b"\n"
             send_queue.put(data, block=True, timeout=5)
         except Full:
             logging.error("Send queue full — event dropped")
         except Exception as e:
             logging.error(f"Queue error: {e}")
+
+
+# =============================================================================
+# System stats (XML — matches Linux watcher format so Chronicler can parse it)
+# =============================================================================
 
 def _check_service_status(name: str) -> str:
     try:
@@ -277,6 +294,7 @@ def _check_service_status(name: str) -> str:
         return "Running" if status[1] == 4 else "Stopped"
     except Exception:
         return "Unknown"
+
 
 def gather_system_stats():
     try:
@@ -318,6 +336,7 @@ def gather_system_stats():
 
     return ET.tostring(root, encoding="unicode")
 
+
 def send_system_stats(xml_data: str):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -327,6 +346,7 @@ def send_system_stats(xml_data: str):
         sock.close()
     except Exception as e:
         logging.warning(f"Stats send failed: {e}")
+
 
 def stats_loop():
     logging.info("Stats sender started")
@@ -338,20 +358,42 @@ def stats_loop():
             logging.error(f"Stats error: {e}")
         time.sleep(STATS_INTERVAL)
 
+
+# =============================================================================
+# Event log reader
+# =============================================================================
+
+def _sanitise(s: str) -> str:
+    if not s:
+        return ""
+    s = str(s)
+    s = s.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    s = s.replace("\t", " ").replace("\x0b", " ").replace("\x0c", " ")
+    return " ".join(s.split()).strip()
+
+
 def _format_event(channel: str, event_id: int, record_number: int,
                   time_generated: str, source: str, message: str,
                   user: str, computer: str) -> str:
-
-    msg_clean = message.replace("\r", " ").replace("\n", " ").strip()
-    msg_clean = " ".join(msg_clean.split())
+    src  = _sanitise(source)
+    usr  = _sanitise(user)
+    comp = _sanitise(computer)
+    msg  = _sanitise(message)
     return (
         f"WinEvt channel={channel} event_id={event_id} "
         f"record={record_number} time={time_generated} "
-        f"source={source!r} user={user!r} computer={computer!r} "
-        f"msg={msg_clean!r}"
+        f"source={src!r} user={usr!r} computer={comp!r} "
+        f"msg={msg!r}"
     )
 
-def _read_channel(channel: str, allowed_ids: list, bookmarks: dict, handler: StateHandler):
+
+def _read_channel(channel: str, allowed_ids: list, bookmarks: dict,
+                  handler: StateHandler):
+    """
+    Reads new events from a single Windows Event Log channel using the
+    win32evtlog API (works on all Windows versions from Vista/2008 onwards).
+    Falls back to the legacy OpenEventLog API on Windows XP/2003.
+    """
     try:
         import win32evtlog
         import win32evtlogutil
@@ -477,6 +519,11 @@ def watch_event_logs(handler: StateHandler):
 
         save_bookmarks(bookmarks)
         time.sleep(POLL_INTERVAL)
+
+
+# =============================================================================
+# Entry point
+# =============================================================================
 
 if __name__ == "__main__":
     logging.info("=" * 60)
