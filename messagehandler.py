@@ -1,7 +1,3 @@
-# OpenSIEM - GPL-3.0 Licensed
-# Copyright (c) 2024–present
-# See LICENSE for details.
-
 import logging
 import re
 import os
@@ -23,11 +19,15 @@ def _syslog_sev_to_alarm(syslog_sev: str) -> str:
         return 'high'
     if s in ('warning', 'warn', 'mid', 'medium', 'notice'):
         return 'mid'
-    return 'low'
+    return 'low'   # debug / info / low / unknown
 
 
 def processMessage(conn, addr, module_dict, msg, conn_museum):
     if msg.startswith('<SystemStats>'):
+        return
+    if msg.startswith('__HEARTBEAT__'):
+        return
+    if not msg.strip():
         return
 
     log_regex = r'(\b\d{1,3}(?:\.\d{1,3}){3}\b)\s+(\S+)\s+(.*)'
@@ -42,8 +42,9 @@ def processMessage(conn, addr, module_dict, msg, conn_museum):
     if ipchecker.check_ip(match.group(0)):
         logging.critical(f"BLACKLISTED IP DETECTED: {source_ip}")
 
+        # Find which artifact matched and use its stored severity
         matched_artifact = source_ip
-        artifact_severity = 'high'
+        artifact_severity = 'high'   # fallback
         try:
             import psycopg2, configparser as _cp
             _cfg = _cp.ConfigParser(); _cfg.read('/etc/opensiem/opensiem.conf')
@@ -65,7 +66,7 @@ def processMessage(conn, addr, module_dict, msg, conn_museum):
         alarm_system.raise_alarm(
             case_name=f"Artifact detected: {matched_artifact}",
             source_ip=source_ip,
-            severity=artifact_severity,
+            severity=artifact_severity,   # ← uses severity from malicious_artifacts table
             details={"artifact": matched_artifact, "source_ip": source_ip,
                      "message": f"Malicious artifact '{matched_artifact}' found in log"},
             alert_type='artifact'
@@ -105,3 +106,4 @@ def processMessage(conn, addr, module_dict, msg, conn_museum):
     )
 
     correlation.correlate(msg_id, parsed_log, source_ip=source_ip)
+
