@@ -4,10 +4,10 @@
 # See LICENSE for details.
 import time
 import socket
+import ssl
 import configparser
 import signal
 import os
-# import getips
 import os.path
 import chardet
 from datetime import datetime
@@ -21,26 +21,34 @@ from queue import Queue
 from urllib.request import urlopen
 import re
 
-# Set logging to DEBUG to see everything
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# Watcher configuration
-SERVER = str("127.0.1.1")
-PORT = str(11514)
-STATE_PORT = str(51780)
-SOURCES = "/var/log/syslog,/var/log/auth.log,/var/log/apache2/access.log"
-OFFSET_FILE = './offsets.txt'  # Path to the persistent storage file
-
-logging.debug(f"Using offset file at: {os.path.abspath(OFFSET_FILE)}")
-
-send_queue = Queue()
+# ── Watcher configuration ─────────────────────────────────────────────────────
+SERVER     = "127.0.1.1"
+PORT       = 11514
+STATE_PORT = 51780
+SOURCES    = "/var/log/syslog,/var/log/auth.log,/var/log/apache2/access.log"
+OFFSET_FILE = './offsets.txt'
 
 Client_name = "Developer-Laptop"
 
-NO_OF_SOURCES = len(SOURCES.split(","))
-SOURCES_LIST = SOURCES.split(",")
+# Set to True if the OpenSIEM server has TLS enabled in opensiem.conf.
+# Must match the server setting — if the server requires TLS and this is False,
+# the connection will be rejected. If this is True and the server is plaintext,
+# the handshake will fail.
+TLS_ENABLED = True
 
-# List of services to monitor
+# Path to the server's certificate file (.crt).
+# Copy /etc/opensiem/certs/server.crt from the OpenSIEM server to this machine.
+# Only used when TLS_ENABLED = True.
+TLS_SERVER_CERT = "./server.crt"
+# ─────────────────────────────────────────────────────────────────────────────
+
+logging.debug(f"Using offset file at: {os.path.abspath(OFFSET_FILE)}")
+
+SOURCES_LIST = SOURCES.split(",")
+send_queue = Queue()
+
 services_to_monitor = ["rsyslog", "postgresql"]
 
 def get_local_ip():
@@ -90,6 +98,21 @@ class StateHandler:
                 sock.settimeout(self.SOCKET_TIMEOUT)
                 sock.connect(self.ADDR)
 
+                if TLS_ENABLED:
+                    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+                    if os.path.exists(TLS_SERVER_CERT):
+                        ctx.load_verify_locations(TLS_SERVER_CERT)
+                        ctx.verify_mode = ssl.CERT_REQUIRED
+                    else:
+                        # Certificate file not found — warn and skip verification.
+                        # Copy server.crt from /etc/opensiem/certs/ on the OpenSIEM server.
+                        logging.warning(f"[TLS] Server cert not found at {TLS_SERVER_CERT} — skipping verification")
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                    sock = ctx.wrap_socket(sock, server_hostname=SERVER)
+                    logging.info(f"[TLS] Encrypted connection established to {self.ADDR}")
+
                 with self.lock:
                     self.client = sock
                     self.connected = True
@@ -97,6 +120,9 @@ class StateHandler:
                 logging.info(f"[CONNECTED] to {self.ADDR}")
                 return
 
+            except ssl.SSLError as e:
+                logging.error(f"[TLS] Handshake failed: {e} — is TLS_ENABLED correct on both server and watcher?")
+                time.sleep(5)
             except Exception as e:
                 logging.warning(f"Connect failed: {e}, retrying in 5s")
                 time.sleep(5)
