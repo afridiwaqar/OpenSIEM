@@ -130,6 +130,7 @@
     <a href="/alerts.html">Alerts</a>
     <a href="/logs.html">Logs</a>
     <a href="/reports.html">Reports</a>
+    <a href="/archive.html">Archive</a>
     <a href="/clients.html">Clients</a>
     <a href="/users.html">Users</a>
     <a href="/settings.html">Settings</a>

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenSIEM — Archive</title>
+  <link rel="stylesheet" href="/dashboard.css">
+  <style>
+    .arch-tabs        { display:flex; gap:4px; border-bottom:2px solid #1c2a3a; margin-bottom:20px; }
+    .arch-tab         { padding:8px 20px; cursor:pointer; border-radius:6px 6px 0 0;
+                        color:#7a9bbf; font-size:13px; font-weight:600; border:none;
+                        background:transparent; transition:.15s; }
+    .arch-tab.active  { background:#0d1822; color:#7ecb7e; border-bottom:2px solid #7ecb7e; }
+    .arch-tab:hover:not(.active){ background:#0d1822; color:#c5d8f0; }
+
+    .arch-panel       { display:none; }
+    .arch-panel.active{ display:block; }
+
+    .stat-grid        { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+                        gap:12px; margin-bottom:20px; }
+    .stat-card        { background:#0d1822; border:1px solid #1c2a3a; border-radius:8px;
+                        padding:16px; }
+    .stat-card .label { font-size:11px; color:#7a9bbf; text-transform:uppercase;
+                        letter-spacing:.06em; margin-bottom:6px; }
+    .stat-card .value { font-size:22px; font-weight:700; color:#c5d8f0; }
+    .stat-card .sub   { font-size:11px; color:#4a6a8a; margin-top:4px; }
+
+    .storage-bar-wrap { background:#0d1822; border:1px solid #1c2a3a; border-radius:8px;
+                        padding:16px; margin-bottom:20px; }
+    .storage-bar-bg   { background:#1c2a3a; border-radius:4px; height:12px;
+                        overflow:hidden; margin:8px 0; }
+    .storage-bar-fill { height:100%; border-radius:4px; background:#1a56a0;
+                        transition:width .4s; }
+    .storage-bar-fill.warn{ background:#c0821a; }
+    .storage-bar-fill.danger{ background:#b01828; }
+
+    .filter-grid      { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+                        gap:10px; margin-bottom:14px; }
+    .filter-grid input,
+    .filter-grid select { width:100%; box-sizing:border-box; }
+
+    .result-meta      { font-size:12px; color:#4a6a8a; margin-bottom:10px; }
+    .result-meta span { color:#7ecb7e; font-weight:600; }
+
+    .step-list        { list-style:none; padding:0; margin:0; }
+    .step-list li     { display:flex; align-items:center; gap:8px;
+                        padding:4px 0; font-size:13px; }
+    .step-ok          { color:#7ecb7e; }
+    .step-fail        { color:#b01828; }
+
+    .rehy-card        { background:#0d1822; border:1px solid #1c2a3a; border-radius:8px;
+                        padding:16px; margin-bottom:12px; }
+    .rehy-card .rehy-head { display:flex; justify-content:space-between;
+                             align-items:center; margin-bottom:8px; }
+    .rehy-status      { display:inline-block; padding:2px 10px; border-radius:10px;
+                        font-size:11px; font-weight:700; text-transform:uppercase; }
+    .rehy-status.active  { background:#0e3d6e; color:#7ecb7e; }
+    .rehy-status.released{ background:#1c2a3a; color:#4a6a8a; }
+    .rehy-status.running { background:#0e3d6e; color:#f0c040; }
+    .rehy-status.failed  { background:#3a1010; color:#ff6b6b; }
+
+    .policy-section   { background:#0d1822; border:1px solid #1c2a3a; border-radius:8px;
+                        padding:20px; margin-bottom:16px; }
+    .policy-section h3{ margin:0 0 14px; font-size:14px; color:#7ecb7e; }
+    .policy-row       { display:grid; grid-template-columns:1fr 1fr; gap:12px;
+                        margin-bottom:12px; }
+    .policy-row.three { grid-template-columns:1fr 1fr 1fr; }
+
+    .backend-card     { background:#0d1822; border:1px solid #1c2a3a; border-radius:8px;
+                        padding:16px; margin-bottom:12px; }
+    .backend-card .bc-head { display:flex; justify-content:space-between;
+                              align-items:center; }
+    .backend-type-tabs{ display:flex; gap:6px; margin-bottom:16px; }
+    .bt-tab           { padding:6px 16px; border-radius:6px; cursor:pointer;
+                        background:#1c2a3a; color:#7a9bbf; font-size:12px;
+                        font-weight:600; border:1px solid #1c2a3a; }
+    .bt-tab.active    { background:#1a56a0; color:#fff; border-color:#1a56a0; }
+
+    .test-steps       { background:#07090f; border-radius:6px; padding:12px;
+                        margin-top:12px; }
+    .part-table       { width:100%; border-collapse:collapse; font-size:12px; }
+    .part-table th    { background:#0d1822; color:#7a9bbf; padding:8px 10px;
+                        text-align:left; font-weight:600; border-bottom:1px solid #1c2a3a; }
+    .part-table td    { padding:6px 10px; border-bottom:1px solid #1c2a3a; color:#c5d8f0; }
+    .part-table tr:hover td{ background:#0d1822; }
+
+    .frozen-badge     { background:#0e3d6e; color:#f0c040; padding:1px 7px;
+                        border-radius:8px; font-size:10px; font-weight:700; }
+    .partial-badge    { background:#3a2a0a; color:#f0c040; padding:1px 7px;
+                        border-radius:8px; font-size:10px; }
+    
+    .wrap{
+        padding:12px;
+      }
+
+      .panel{
+        background:#0f1521;
+        border:1px solid #1c2434;
+        border-radius:8px;
+        padding:12px;
+      }
+
+      .card,
+      .callout,
+      .empty,
+      .storage-bar-wrap,
+      .stat-card,
+      .rehy-card,
+      .policy-section,
+      .backend-card{
+        background:#0f1521 !important;
+        border:1px solid #1c2434 !important;
+      }
+
+      .arch-tabs{
+        border-bottom:1px solid #1c2434;
+        margin-bottom:12px;
+      }
+
+      .arch-tab{
+        background:#1c2434;
+        border:1px solid #2a3550;
+        color:#d6e3f3;
+        border-radius:6px;
+      }
+
+      .arch-tab.active{
+        background:#263248;
+        color:#ffffff;
+        border-color:#3b4c6d;
+      }
+
+      .arch-tab:hover{
+        filter:brightness(1.1);
+      }
+
+      .section-title{
+        margin:16px 0 10px;
+        color:#b8c7dc;
+        font-weight:600;
+        font-size:15px;
+      }
+
+      .part-table th,
+      .table th{
+        border-bottom:1px solid #1c2434;
+      }
+
+      .part-table td,
+      .table td{
+        border-bottom:1px solid #1c2434;
+      }
+
+      input,
+      select,
+      textarea{
+        background:#0f1521;
+        border:1px solid #1c2434;
+        color:#d6e3f3;
+        border-radius:6px;
+        padding:8px;
+      }
+
+      .btn.secondary{
+        background:#1c2434;
+        border:1px solid #2a3550;
+        color:#e9eef5;
+      }
+
+      .btn.secondary:hover{
+        filter:brightness(1.1);
+      }
+  </style>
+</head>
+<body>
+<nav class="top-nav">
+  <a href="/">Dashboard</a>
+  <a href="/correlation.html">Correlation Rules</a>
+  <a href="/artifacts.html">Artifacts</a>
+  <a href="/alerts.html">Alerts</a>
+  <a href="/logs.html">Logs</a>
+  <a href="/reports.html">Reports</a>
+  <a class="active" href="/archive.html">Archive</a>
+  <a href="/clients.html">Clients</a>
+  <a href="/users.html">Users</a>
+  <a href="/settings.html">Settings</a>
+
+  <div class="noti-wrap" style="margin-left:auto">
+    <button id="notiBell" class="bell" aria-label="Notifications">
+      <span class="bell-icon">🔔</span>
+      <span id="notiBadge" class="badge">0</span>
+    </button>
+
+    <div id="notiMenu" class="dropdown hidden" role="menu" aria-hidden="true">
+      <div class="dropdown-header">Notifications</div>
+      <div id="notiList" class="dropdown-list"></div>
+    </div>
+  </div>
+</nav>
+
+ <div class="wrap" style="display:block">
+  <div class="panel" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div>
+        <h2 style="margin:0;color:#b8c7dc">Archive</h2>
+        <div style="font-size:12px;color:#6f86a3;margin-top:4px">
+          Archive management, rehydration, storage, and audit controls
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="btnRunNow">▶ Run Archive Now</button>
+        <button class="btn" id="btnVerifyAll">⚙ Verify All Integrity</button>
+      </div>
+    </div>
+  </div>
+
+    <div class="arch-tabs">
+      <button class="arch-tab active" data-tab="overview">Overview</button>
+      <button class="arch-tab" data-tab="search">Search</button>
+      <button class="arch-tab" data-tab="rehydrate">Rehydrate</button>
+      <button class="arch-tab" data-tab="partitions">Partitions</button>
+      <button class="arch-tab" data-tab="policy">Policy</button>
+      <button class="arch-tab" data-tab="storage">Storage</button>
+      <button class="arch-tab" data-tab="audit">Audit Log</button>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div class="arch-panel active" id="panel-overview">
+      <div class="stat-grid" id="overviewStats"></div>
+      <div class="storage-bar-wrap" id="storageBarWrap"></div>
+      <div class="section-title">Last Archive Run</div>
+      <div id="lastRunInfo" class="empty">Loading...</div>
+      <div class="section-title" style="margin-top:16px">Active Rehydrations</div>
+      <div id="overviewRehydrations"></div>
+    </div>
+
+    <!-- SEARCH -->
+    <div class="arch-panel" id="panel-search">
+      <div class="card" style="margin-bottom:16px">
+        <div class="filter-grid" style="grid-template-columns:1fr 1fr">
+          <label>Date From <input type="date" id="srchDateFrom"></label>
+          <label>Date To   <input type="date" id="srchDateTo"></label>
+        </div>
+        <div class="filter-grid">
+          <label>Source IP    <input type="text" id="srchIp"     placeholder="e.g. 192.168.1.50"></label>
+          <label>Device Name  <input type="text" id="srchDevice" placeholder="hostname"></label>
+          <label>Action       <input type="text" id="srchAction" placeholder="e.g. LOGIN_FAILED"></label>
+          <label>Severity     <select id="srchLevel">
+            <option value="">All</option>
+            <option>low</option><option>mid</option>
+            <option>high</option><option>critical</option>
+          </select></label>
+          <label>User         <input type="text" id="srchUser"   placeholder="username"></label>
+          <label>Source       <input type="text" id="srchSource" placeholder="log source name"></label>
+        </div>
+        <div style="margin-bottom:10px">
+          <label>Message content
+            <input type="text" id="srchMsg" placeholder="Full-text search (slower — scans raw message)"
+                   style="width:100%;box-sizing:border-box;margin-top:4px">
+          </label>
+          <div style="font-size:11px;color:#4a6a8a;margin-top:4px">
+            Use structured filters above first to narrow results before adding message search.
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" id="btnSearch">Search Archive</button>
+          <button class="btn secondary" id="btnExportCsv" style="display:none">Export CSV</button>
+          <select id="srchPerPage" style="width:auto">
+            <option value="50">50 / page</option>
+            <option value="100" selected>100 / page</option>
+            <option value="250">250 / page</option>
+          </select>
+        </div>
+      </div>
+      <div id="searchMeta" class="result-meta" style="display:none"></div>
+      <div id="searchProgress" style="display:none;color:#7a9bbf;font-size:13px">
+        ⏳ Searching archive partitions...
+      </div>
+      <div id="searchResults"></div>
+      <div id="searchPagination" style="display:flex;gap:8px;align-items:center;margin-top:10px;display:none">
+        <button class="btn secondary" id="srchPrev">← Prev</button>
+        <span id="srchPageInfo" style="font-size:13px;color:#7a9bbf"></span>
+        <button class="btn secondary" id="srchNext">Next →</button>
+      </div>
+    </div>
+
+    <!-- REHYDRATE -->
+    <div class="arch-panel" id="panel-rehydrate">
+      <div class="card" style="margin-bottom:20px">
+        <h3 style="margin:0 0 14px;color:#7ecb7e;font-size:14px">
+          Rehydrate Archived Data
+        </h3>
+        <p style="color:#7a9bbf;font-size:13px;margin:0 0 16px">
+          Copies archived Parquet data back into live PostgreSQL storage so it
+          appears in normal search results. Rehydration is temporary — data is
+          re-archived when released.
+        </p>
+        <div class="policy-row">
+          <label>Date From <input type="date" id="rhydFrom"></label>
+          <label>Date To   <input type="date" id="rhydTo"></label>
+        </div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;color:#7a9bbf;margin-bottom:6px">Tables to rehydrate:</div>
+          <label style="margin-right:16px">
+            <input type="checkbox" id="rhydMessages" checked> Messages
+          </label>
+          <label>
+            <input type="checkbox" id="rhydAlerts"> Alerts
+          </label>
+        </div>
+        <div class="policy-row">
+          <label>Auto-release after
+            <select id="rhydReleaseDays">
+              <option value="1">1 day</option>
+              <option value="3">3 days</option>
+              <option value="7" selected>7 days</option>
+              <option value="14">14 days</option>
+              <option value="30">30 days</option>
+            </select>
+          </label>
+          <div></div>
+        </div>
+        <div id="rhydEstimate" style="display:none" class="callout">
+          <div id="rhydEstimateText"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn secondary" id="btnRhydEstimate">Estimate Size</button>
+          <button class="btn" id="btnRhydStart">Rehydrate</button>
+        </div>
+      </div>
+
+      <div class="section-title">Active &amp; Recent Rehydrations</div>
+      <div id="rhydList"></div>
+    </div>
+
+    <!-- PARTITIONS -->
+    <div class="arch-panel" id="panel-partitions">
+      <div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">
+        <label>State
+          <select id="partState">
+            <option value="">All</option>
+            <option value="verified">Verified</option>
+            <option value="deleted_from_hot">Archived</option>
+            <option value="failed">Failed</option>
+            <option value="verify_failed">Verify Failed</option>
+          </select>
+        </label>
+        <label>From <input type="date" id="partFrom"></label>
+        <label>To   <input type="date" id="partTo"></label>
+        <button class="btn" id="btnPartFilter">Filter</button>
+      </div>
+      <div id="partitionTable"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+        <button class="btn secondary" id="partPrev">← Prev</button>
+        <span id="partPageInfo" style="font-size:13px;color:#7a9bbf"></span>
+        <button class="btn secondary" id="partNext">Next →</button>
+      </div>
+    </div>
+
+    <!-- POLICY -->
+    <div class="arch-panel" id="panel-policy">
+      <div id="policyForm"></div>
+      <button class="btn" id="btnSavePolicy">Save Policy</button>
+    </div>
+
+    <!-- STORAGE -->
+    <div class="arch-panel" id="panel-storage">
+      <div class="section-title">Configured Backends</div>
+      <div id="backendList"></div>
+      <div class="card" id="backendForm">
+        <h3 style="margin:0 0 14px;color:#7ecb7e;font-size:14px">Add / Edit Backend</h3>
+        <label style="display:block;margin-bottom:10px">Name
+          <input type="text" id="beName" placeholder="e.g. Primary S3">
+        </label>
+        <div class="backend-type-tabs">
+          <button class="bt-tab active" data-be="local">Local / NFS</button>
+          <button class="bt-tab" data-be="sftp">SFTP</button>
+          <button class="bt-tab" data-be="s3">S3-Compatible</button>
+        </div>
+        <div id="beFieldsLocal">
+          <label>Path
+            <input type="text" id="beLocalPath" placeholder="/var/opensiem/archive">
+          </label>
+        </div>
+        <div id="beFieldsSftp" style="display:none">
+          <div class="policy-row">
+            <label>Hostname <input type="text" id="beSftpHost"></label>
+            <label>Port     <input type="number" id="beSftpPort" value="22"></label>
+          </div>
+          <div class="policy-row">
+            <label>Username <input type="text" id="beSftpUser"></label>
+            <label>Remote Path <input type="text" id="beSftpPath" value="/archive/opensiem"></label>
+          </div>
+          <label>SSH Key Path (recommended)
+            <input type="text" id="beSftpKey" placeholder="/etc/opensiem/certs/sftp_key">
+          </label>
+          <label style="margin-top:8px;display:block">Password (leave blank if using SSH key)
+            <input type="password" id="beSftpPass">
+          </label>
+        </div>
+        <div id="beFieldsS3" style="display:none">
+          <label>Endpoint URL
+            <input type="text" id="beS3Endpoint" placeholder="Leave blank for AWS S3">
+          </label>
+          <div class="policy-row" style="margin-top:8px">
+            <label>Bucket <input type="text" id="beS3Bucket"></label>
+            <label>Region <input type="text" id="beS3Region" value="us-east-1"></label>
+          </div>
+          <label>Path Prefix
+            <input type="text" id="beS3Prefix" placeholder="logs/ (optional)">
+          </label>
+          <div class="policy-row" style="margin-top:8px">
+            <label>Access Key ID     <input type="text"     id="beS3Key"></label>
+            <label>Secret Access Key <input type="password" id="beS3Secret"></label>
+          </div>
+          <label style="margin-top:6px">
+            <input type="checkbox" id="beS3PathStyle">
+            Use path-style addressing (required for MinIO and some providers)
+          </label>
+        </div>
+        <div id="testResults" class="test-steps" style="display:none"></div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn secondary" id="btnTestConn">Test Connection</button>
+          <button class="btn" id="btnSaveBackend">Save Backend</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUDIT LOG -->
+    <div class="arch-panel" id="panel-audit">
+      <div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">
+        <label>Action
+          <select id="auditAction"><option value="">All actions</option></select>
+        </label>
+        <label>From <input type="date" id="auditFrom"></label>
+        <label>To   <input type="date" id="auditTo"></label>
+        <button class="btn" id="btnAuditFilter">Filter</button>
+        <button class="btn secondary" id="btnAuditCsv">Export CSV</button>
+      </div>
+      <div id="auditTable"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+        <button class="btn secondary" id="auditPrev">← Prev</button>
+        <span id="auditPageInfo" style="font-size:13px;color:#7a9bbf"></span>
+        <button class="btn secondary" id="auditNext">Next →</button>
+      </div>
+    </div>
+
+  </div><!-- page-wrap -->
+
+<script src="archive.js"></script>
+</body>
+</html>

@@ -84,18 +84,20 @@
     .empty { color:#9aa8bd; padding:10px 0; font-size:13px; }
   </style>
 </head>
-<body>
+  <!-- Top Nav -->
   <nav class="top-nav">
     <a href="/">Dashboard</a>
     <a href="/correlation.html">Correlation Rules</a>
-    <a class="active" href="/artifacts.html">Artifacts</a>
+    <a href="/artifacts.html">Artifacts</a>
     <a href="/alerts.html">Alerts</a>
     <a href="/logs.html">Logs</a>
     <a href="/reports.html">Reports</a>
+    <a href="/archive.html" class="active">Archive</a>
     <a href="/clients.html">Clients</a>
     <a href="/users.html">Users</a>
     <a href="/settings.html">Settings</a>
-    <div class="noti-wrap" style="margin-left:auto">
+    <button id="reloadRulesBtn" class="btn small" style="margin-left:auto">↺ Reload Rules</button>
+    <div class="noti-wrap">
       <button id="notiBell" class="bell" aria-label="Notifications">
         <span class="bell-icon">🔔</span>
         <span id="notiBadge" class="badge">0</span>

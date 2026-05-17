@@ -45,7 +45,7 @@ import collector
 import serverstate
 from tcphandler import tcp_handle_client
 from malicious_keywords_manager import KeywordUpdater
-
+from archiver import Archiver
 
 TCP_PORT = 11514
 UDP_PORT = 10514
@@ -178,6 +178,10 @@ if __name__ == "__main__":
     keyword_updater = KeywordUpdater()
     keyword_updater.start()
 
+    archiver = Archiver()
+    archiver.start()
+
     serverstate.start()
     subprocess.Popen(['python3', 'spector_state_observer.py'])
     tcp_thread.join()
+
