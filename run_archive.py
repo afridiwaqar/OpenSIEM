@@ -13,7 +13,7 @@ import argparse
 import logging
 from datetime import date, datetime, timedelta
 
-sys.path.insert(0, '/opt/opensiem')
+sys.path.insert(0, './')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,10 +86,9 @@ def run_rehydrate(job_id: int):
             return
 
         backend    = load_backend_from_db(conn)
-        policy_cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        policy_cur.execute("SELECT * FROM archive_policy WHERE id = 1")
-        policy     = dict(policy_cur.fetchone())
-        archive_path = policy.get('archive_path', '/var/opensiem/archive')
+        if not backend:
+            print(json.dumps({'ok': False, 'error': 'No active storage backend configured'}))
+            return
 
         try:
             import pyarrow.parquet as pq
@@ -176,10 +175,10 @@ def run_release(job_id: int):
 
         if 'messages' in (tables or []):
             cur.execute(
-                """DELETE FROM Message
-                   WHERE Date IN (
-                       SELECT data_id FROM Calendar
-                       WHERE Date BETWEEN %s AND %s
+                """DELETE FROM message
+                   WHERE date IN (
+                       SELECT data_id FROM calendar
+                       WHERE date BETWEEN %s AND %s
                    )
                    AND message_source IN (
                        SELECT msg_id FROM archive_manifest
@@ -212,29 +211,36 @@ def _insert_messages(conn, table) -> int:
     if n == 0:
         return 0
 
+    inserted = 0
     for i in range(n):
         try:
+            log_date = rows['log_date'][i]
+            msg_id   = rows['msg_id'][i]
+
+            msg_json = _json.dumps({
+                'message':     rows.get('message',     [None])[i] or '',
+                'action':      rows.get('action',      [None])[i] or '',
+                'level':       rows.get('level',       [None])[i] or '',
+                'raw_message': rows.get('raw_message', [None])[i] or '',
+            })
+
             cur.execute(
-                """INSERT INTO Message
-                   (message_source, Date, message, log_source, device_id, process_id)
+                """INSERT INTO message
+                   (message_source, date, message, log_source, device_id, process_id)
                    SELECT %s, data_id, %s, 1, 1, 1
-                   FROM Calendar WHERE Date = %s
+                   FROM calendar WHERE date = %s
                    ON CONFLICT DO NOTHING""",
-                (
-                    rows['msg_id'][i],
-                    _json.dumps({'message': rows.get('message', [None])[i] or '',
-                                 'action':  rows.get('action',  [None])[i] or '',
-                                 'level':   rows.get('level',   [None])[i] or ''}),
-                    rows['log_date'][i],
-                )
+                (msg_id, msg_json, log_date)
             )
+            inserted += cur.rowcount
         except Exception as e:
-            logging.warning(f"Row insert failed: {e}")
+            logging.warning(f"Row insert failed (row {i}): {e}")
+            conn.rollback()
             continue
 
     conn.commit()
     cur.close()
-    return n
+    return inserted
 
 
 if __name__ == '__main__':

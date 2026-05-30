@@ -214,7 +214,7 @@ def _fetch_messages_for_date(conn, target_date: date, batch_size=5000):
         FROM Message m
         JOIN Calendar   c  ON c.data_id   = m.Date
         JOIN Device     d  ON d.device_id = m.device_id
-        JOIN Log_Source ls ON ls.source_id = m.log_source
+        JOIN "Log_Source" ls ON ls.source_id = m.log_source
         JOIN Process    p  ON p.process_id = m.process_id
         WHERE c.Date = %s
         ORDER BY m.message_source
@@ -226,7 +226,7 @@ def _fetch_messages_for_date(conn, target_date: date, batch_size=5000):
 
 def _build_parquet_bytes(rows: list, compression: str = 'zstd') -> bytes:
     if not rows:
-        return b''
+        return b'', {}
 
     columns = {field.name: [] for field in PARQUET_SCHEMA}
     keys_seen = {}
@@ -392,7 +392,7 @@ def archive_date(target_date: date, policy: dict,
                 FROM Message m
                 JOIN Calendar   c  ON c.data_id   = m.Date
                 JOIN Device     d  ON d.device_id = m.device_id
-                JOIN Log_Source ls ON ls.source_id = m.log_source
+                JOIN "Log_Source" ls ON ls.source_id = m.log_source
                 JOIN Process    p  ON p.process_id = m.process_id
                 WHERE c.Date = %s
                 ORDER BY m.message_source
@@ -458,6 +458,7 @@ def archive_date(target_date: date, policy: dict,
                      f"{rows_exported} rows, {len(full_data)//1024} KB")
 
         except Exception as e:
+            conn.rollback()
             log.error(f"[ARCHIVE] Failed {table_name} {target_date}: {e}", exc_info=True)
             _update_manifest(conn, mid, state='failed', error_msg=str(e))
             _audit(conn, 'archive_failed', target_date, table_name, mid,

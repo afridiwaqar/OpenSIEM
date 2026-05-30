@@ -172,10 +172,18 @@ $db = pdo();
 
 
 function _verify_single(PDO $db, array $partition): array {
-    $policy   = $db->query("SELECT archive_path FROM archive_policy WHERE id = 1")
-                   ->fetch(PDO::FETCH_ASSOC);
-    $base     = $policy['archive_path'] ?? '/var/opensiem/archive';
-    $full     = $base . '/' . $partition['file_path'];
+    // Get archive base path from the active storage backend config
+    // For local/NFS backends the path is in config_json
+    // For remote backends (SFTP/S3) verification must be done via the Python archiver
+    $storage = $db->query(
+        "SELECT backend_type, config_json FROM archive_storage_config
+         WHERE is_active = true LIMIT 1"
+    )->fetch(PDO::FETCH_ASSOC);
+
+    $backend_type = $storage['backend_type'] ?? 'local';
+    $config       = json_decode($storage['config_json'] ?? '{}', true);
+    $base         = rtrim($config['path'] ?? '/var/opensiem/archive', '/');
+    $full         = $base . '/' . ltrim($partition['file_path'], '/');
 
     $result = [
         'manifest_id'    => (int)$partition['id'],
@@ -185,12 +193,17 @@ function _verify_single(PDO $db, array $partition): array {
         'error'          => null,
     ];
 
+    if ($backend_type !== 'local') {
+        $result['error'] = "Remote backend ({$backend_type}) verification must be run from the server CLI: python3 /opt/opensiem/run_archive.py --verify {$partition['id']}";
+        return $result;
+    }
+
     if (!file_exists($full)) {
-        $result['error'] = 'File not found on disk';
+        $result['error'] = "File not found on disk: {$full}";
         $db->prepare(
             "UPDATE archive_manifest SET state = 'verify_failed',
-             error_msg = 'File not found during verification' WHERE id = ?"
-        )->execute([$partition['id']]);
+             error_msg = ? WHERE id = ?"
+        )->execute([$result['error'], $partition['id']]);
         return $result;
     }
 
@@ -216,12 +229,12 @@ function _verify_single(PDO $db, array $partition): array {
 
 
 function _run_python_archiver(string $target_date): array {
-    $script = '/home/waqar/OpenSIEM/run_archive.py';
+    $script = '/opt/opensiem/run_archive.py';
 
     if (!file_exists($script)) {
         return [
             'ok'    => false,
-            'error' => "Archiver script not found at {$script}, Correct the path at of run_archive.py in api/archive/run.php ",
+            'error' => "Archiver script not found at {$script} — deploy run_archive.py to /opt/opensiem/",
         ];
     }
 
