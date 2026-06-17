@@ -1,10 +1,4 @@
-<!--
- OpenSIEM - Security Information & Event Management
- Copyright (c) 2024–present
- Licensed under GNU GPL v3.0
- See LICENSE for details.
--->
-
+<!-- /var/www/chronicler/public/artifacts.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -24,80 +18,44 @@
     .card h3 { margin:0 0 8px; color:#b8c7dc; font-size:14px; letter-spacing:.04em; text-transform:uppercase; }
     .muted { color:#9aa8bd; font-size:12px; }
 
-    /* ── Tables ── */
     .table { width:100%; border-collapse:collapse; }
     .table th, .table td { border-bottom:1px solid #1c2434; padding:8px; text-align:left; font-size:13px; }
     .table th { color:#9aa8bd; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
-    .table tbody tr { transition:background .1s; }
-    .table tbody tr:hover { background:#0f1a28; }
 
-    /* ── Buttons ── */
-    .btn        { padding:6px 10px; background:#1c2434; color:#e9eef5; border:1px solid #2a3550; border-radius:6px; cursor:pointer; font-size:13px; transition:filter .15s; }
-    .btn:hover  { filter:brightness(1.1); }
+    .btn { padding:6px 10px; background:#1c2434; color:#e9eef5; border:1px solid #2a3550; border-radius:6px; cursor:pointer; font-size:13px; transition:filter .15s; }
+    .btn:hover { filter:brightness(1.1); }
     .btn.danger { background:#3a1414; border-color:#5c2020; }
     .btn.small  { padding:4px 8px; font-size:12px; }
-    .btn.primary{ background:#1a3a5c; border-color:#2a5a8c; color:#c8dff5; }
+    .btn.primary { background:#1a3a5c; border-color:#2a5a8c; color:#c8dff5; }
 
-    /* ── Severity badges ── */
-    .sev        { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:700; }
-    .sev-critical{ background:#4a0a0a; color:#ff6b6b; }
-    .sev-high   { background:#3a1a0a; color:#ff9a3c; }
-    .sev-mid    { background:#1a2a1a; color:#7ecb7e; }
-    .sev-low    { background:#1a1a2a; color:#7eb3cb; }
-
-    /* ── Bulk bar ── */
-    .bulk-bar { display:none; align-items:center; gap:10px; padding:8px 12px;
-                background:#0f1a28; border:1px solid #1c2434; border-radius:6px; margin-bottom:10px; }
-    .bulk-bar.visible { display:flex; }
-    .bulk-count { font-size:13px; color:#b8c7dc; }
-    .col-cb     { width:32px; text-align:center; }
-
-    /* ── Hit count badge ── */
-    .hit-badge  { display:inline-block; background:#1a3a5c; border:1px solid #2a5a8c;
-                  color:#c8dff5; border-radius:10px; padding:1px 7px; font-size:11px;
-                  font-weight:700; margin-left:6px; cursor:pointer; }
-    .hit-badge:hover { filter:brightness(1.2); }
-
-    /* ── Group modal ── */
-    .modal.hidden   { display:none; }
-    .modal          { position:fixed; inset:0; z-index:9999; }
-    .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.6); }
-    .modal-panel    { position:relative; max-width:860px; width:95%; margin:5vh auto;
-                      background:#0f1521; border:1px solid #1c2434; border-radius:10px;
-                      display:flex; flex-direction:column; max-height:90vh; }
-    .modal-header   { padding:12px 16px; border-bottom:1px solid #1c2434;
-                      display:flex; align-items:center; justify-content:space-between; }
-    .modal-header h3{ margin:0; color:#b8c7dc; font-size:14px; letter-spacing:.04em; text-transform:uppercase; }
-    .modal-body     { padding:14px; overflow:auto; flex:1; }
-    .modal-footer   { padding:10px 14px; border-top:1px solid #1c2434; display:flex; gap:8px; }
-    .modal-bulk     { display:flex; align-items:center; gap:8px; flex:1; flex-wrap:wrap; }
-
-    /* Form elements */
     label { display:block; font-size:11px; color:#9aa8bd; text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
     input, textarea, select {
       width:100%; padding:8px 10px; border:1px solid #1c2434; border-radius:6px;
       background:#090d14; color:#d6e3f3; font-size:13px; box-sizing:border-box;
     }
     input:focus, textarea:focus, select:focus { outline:none; border-color:#2a5a8c; }
+
     .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .form-field { margin-bottom:10px; }
+
     .empty { color:#9aa8bd; padding:10px 0; font-size:13px; }
   </style>
 </head>
+<body>
+
   <!-- Top Nav -->
   <nav class="top-nav">
     <a href="/">Dashboard</a>
     <a href="/correlation.html">Correlation Rules</a>
-    <a href="/artifacts.html">Artifacts</a>
+    <a class="active" href="/artifacts.html">Artifacts</a>
     <a href="/alerts.html">Alerts</a>
     <a href="/logs.html">Logs</a>
     <a href="/reports.html">Reports</a>
-    <a href="/archive.html" class="active">Archive</a>
     <a href="/clients.html">Clients</a>
     <a href="/users.html">Users</a>
     <a href="/settings.html">Settings</a>
-    <button id="reloadRulesBtn" class="btn small" style="margin-left:auto">↺ Reload Rules</button>
-    <div class="noti-wrap">
+
+    <div class="noti-wrap" style="margin-left:auto">
       <button id="notiBell" class="bell" aria-label="Notifications">
         <span class="bell-icon">🔔</span>
         <span id="notiBadge" class="badge">0</span>
@@ -111,35 +69,48 @@
 
   <div class="tabs">
     <button class="tab active" data-tab="hitsPane">Hits</button>
-    <button class="tab"        data-tab="managePane">Manage</button>
+    <button class="tab" data-tab="managePane">Manage</button>
   </div>
 
   <div class="tabpanes">
 
-    <!-- ═══ HITS ═══ -->
+    <!-- ═══════════════════ HITS ═══════════════════ -->
     <div class="pane active" id="hitsPane">
       <div class="card">
-        <h3>Artifact Alert Groups</h3>
-        <p class="muted">Alerts grouped by artifact. Click the hit count badge to view and manage individual hits.</p>
+        <h3>Recent Artifact Alerts</h3>
+        <p class="muted">Latest un/acknowledged alerts where <code>alert_type='artifact'</code>. Unread entries appear first.</p>
 
-        <!-- Bulk bar -->
-        <div class="bulk-bar" id="hitsBulkBar">
-          <span class="bulk-count" id="hitsBulkCount">0 selected</span>
-          <button class="btn danger small" id="hitsBulkDelete">🗑 Delete Selected</button>
-          <button class="btn small"        id="hitsBulkAck">✔ Ack Selected</button>
-          <button class="btn small"        id="hitsBulkClear" style="margin-left:auto;color:#6a8aaa">Clear</button>
+        <!-- Hits toolbar -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <select id="hitsPerPage">
+            <option value="25">25 / page</option>
+            <option value="50" selected>50 / page</option>
+            <option value="100">100 / page</option>
+            <option value="250">250 / page</option>
+          </select>
+          <button class="btn small" id="hitsPrev">← Prev</button>
+          <span id="hitsPageInfo" style="font-size:13px;color:#b8c7dc;"></span>
+          <button class="btn small" id="hitsNext">Next →</button>
+        </div>
+
+        <!-- Hits bulk bar -->
+        <div id="hitsBulkBar" style="display:none;align-items:center;gap:8px;
+             padding:6px 10px;background:#0e1e2e;border-radius:6px;margin-bottom:8px">
+          <span id="hitsBulkCount" style="font-size:13px;color:#b8c7dc;"></span>
+          <button class="btn small" id="hitsBulkAck">Acknowledge</button>
+          <button class="btn small danger" id="hitsBulkDelete">Delete</button>
+          <button class="btn small" id="hitsBulkClear">Clear</button>
         </div>
 
         <div id="hitsEmpty" class="empty" style="display:none">No artifact alerts found.</div>
         <table class="table" id="hitsTable">
           <thead>
             <tr>
-              <th class="col-cb"><input type="checkbox" id="hitsSelectAll" title="Select all"></th>
-              <th>Artifact</th>
-              <th>Severity</th>
-              <th>Hits</th>
-              <th>Last Seen</th>
-              <th>Status</th>
+              <th class="col-cb">
+                <input type="checkbox" id="hitsSelectAll" title="Select all">
+              </th>
+              <th>Artifact</th><th>Severity</th><th>Hits</th>
+              <th>Last Seen</th><th>Status</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -147,8 +118,10 @@
       </div>
     </div>
 
-    <!-- ═══ MANAGE ═══ -->
+    <!-- ═══════════════════ MANAGE ═══════════════════ -->
     <div class="pane" id="managePane">
+
+      <!-- Add artifact form -->
       <div class="card">
         <h3>Add Artifact</h3>
         <div class="grid2" style="margin-top:8px">
@@ -159,6 +132,7 @@
           <div>
             <div class="form-field">
               <label for="artSev">Severity</label>
+              <!-- NOTE: DB check constraint only allows low / mid / high -->
               <select id="artSev">
                 <option value="low">low</option>
                 <option value="mid" selected>mid</option>
@@ -180,21 +154,38 @@
         </div>
       </div>
 
+      <!-- Existing artifacts table -->
       <div class="card">
         <h3>Existing Artifacts</h3>
 
+        <!-- Manage toolbar -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <select id="artPerPage">
+            <option value="25">25 / page</option>
+            <option value="50" selected>50 / page</option>
+            <option value="100">100 / page</option>
+            <option value="250">250 / page</option>
+          </select>
+          <button class="btn small" id="artPrev">← Prev</button>
+          <span id="artPageInfo" style="font-size:13px;color:#b8c7dc;"></span>
+          <button class="btn small" id="artNext">Next →</button>
+        </div>
+
         <!-- Manage bulk bar -->
-        <div class="bulk-bar" id="artBulkBar">
-          <span class="bulk-count" id="artBulkCount">0 selected</span>
-          <button class="btn danger small" id="artBulkDelete">🗑 Delete Selected</button>
-          <button class="btn small"        id="artBulkClear" style="margin-left:auto;color:#6a8aaa">Clear</button>
+        <div id="artBulkBar" style="display:none;align-items:center;gap:8px;
+             padding:6px 10px;background:#0e1e2e;border-radius:6px;margin-bottom:8px">
+          <span id="artBulkCount" style="font-size:13px;color:#b8c7dc;"></span>
+          <button class="btn small danger" id="artBulkDelete">Delete selected</button>
+          <button class="btn small" id="artBulkClear">Clear</button>
         </div>
 
         <div id="artEmpty" class="empty" style="display:none">No artifacts defined yet.</div>
         <table class="table" id="artTable">
           <thead>
             <tr>
-              <th class="col-cb"><input type="checkbox" id="artSelectAll" title="Select all"></th>
+              <th class="col-cb">
+                <input type="checkbox" id="artSelectAll" title="Select all">
+              </th>
               <th>Artifact</th><th>Interval</th><th>Severity</th>
               <th>Source</th><th>Added</th><th>Actions</th>
             </tr>
@@ -203,32 +194,30 @@
         </table>
       </div>
     </div>
-  </div>
 
-  <!-- ═══ Group Detail Modal ═══ -->
-  <div id="groupModal" class="modal hidden" role="dialog" aria-modal="true">
-    <div class="modal-backdrop"></div>
-    <div class="modal-panel">
-      <div class="modal-header">
-        <h3 id="groupModalTitle">Hits for artifact</h3>
-        <button id="groupModalClose" class="btn small">✕</button>
-      </div>
-      <div id="groupModalBody" class="modal-body">
-        <div class="empty">Loading…</div>
-      </div>
-      <div class="modal-footer">
-        <div class="modal-bulk">
-          <input type="checkbox" id="groupSelectAll" title="Select all hits">
-          <label for="groupSelectAll" style="display:inline;text-transform:none;font-size:12px;color:#9aa8bd;margin:0;cursor:pointer">Select all</label>
-          <span id="groupSelCount" style="font-size:12px;color:#b8c7dc;margin-left:4px"></span>
-          <button class="btn small"        id="groupBulkAck">✔ Ack Selected</button>
-          <button class="btn danger small" id="groupBulkDelete">🗑 Delete Selected</button>
-        </div>
-        <button class="btn small" id="groupModalCancel" style="margin-left:auto">Close</button>
-      </div>
-    </div>
-  </div>
+  </div><!-- /tabpanes -->
 
   <script src="/artifacts.js"></script>
+
+  <!-- Group detail modal -->
+  <div id="groupModal" class="modal-backdrop hidden">
+    <div class="modal" style="max-width:800px;width:95%">
+      <div class="modal-header">
+        <span id="groupModalTitle">Artifact Hits</span>
+        <button id="groupModalClose" class="btn small">✕</button>
+      </div>
+      <div style="padding:8px 16px;background:#0e1e2e;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <input type="checkbox" id="groupSelectAll" title="Select all">
+        <span id="groupSelCount" style="font-size:12px;color:#b8c7dc;"></span>
+        <button class="btn small" id="groupBulkAck">Acknowledge selected</button>
+        <button class="btn small danger" id="groupBulkDelete">Delete selected</button>
+      </div>
+      <div id="groupModalBody" class="modal-body" style="max-height:60vh;overflow-y:auto"></div>
+      <div class="modal-footer">
+        <button id="groupModalCancel" class="btn">Close</button>
+      </div>
+    </div>
+    <div class="modal-backdrop-overlay"></div>
+  </div>
 </body>
 </html>

@@ -1,9 +1,4 @@
-/*
- OpenSIEM - Security Information & Event Management
- Copyright (c) 2024–present
- Licensed under GNU GPL v3.0
- See LICENSE for details.
-*/
+// /var/www/chronicler/public/alerts.js
 (() => {
   const $   = (id)  => document.getElementById(id);
   const qsa = (sel, root=document) => Array.from(root.querySelectorAll(sel));
@@ -14,6 +9,7 @@
   let total    = 0;
   let openAlertId = null;   // currently open modal alert id
 
+  // ── Boot ────────────────────────────────────────────────────────────────
   (async function init() {
     const me = await GET('/api/auth/me.php');
     if (!me.ok) { location.href = '/login.html'; return; }
@@ -23,6 +19,7 @@
     setupModal();
     setupBulk();
 
+    // Per-page dropdown (element added in alerts.html)
     $('perPage')?.addEventListener('change', () => {
       perPage = parseInt($('perPage').value, 10) || 50;
       page = 1;
@@ -33,9 +30,11 @@
     $('prevPage').onclick  = () => { if (page > 1)                 { page--; loadAlerts(); } };
     $('nextPage').onclick  = () => { if (page * perPage < total)   { page++; loadAlerts(); } };
 
+    // If page was opened with ?id=N (from ribbon/bell link), open that alert
     const params = new URLSearchParams(location.search);
     const linkId = parseInt(params.get('id'), 10);
 
+    // If page was opened with ?severity=X (from dashboard severity widget), pre-filter
     const linkSev = params.get('severity');
     if (linkSev && $('fSeverity')) {
       $('fSeverity').value = linkSev;
@@ -48,6 +47,7 @@
     setInterval(loadNotifications, 5000);
   })();
 
+  // ── API helpers ──────────────────────────────────────────────────────────
   async function GET(path) {
     const r = await fetch(path, { cache: 'no-store' });
     const t = await r.text();
@@ -66,6 +66,7 @@
     catch { console.error('POST parse error', path, t); return { ok: false }; }
   }
 
+  // ── Alert table ──────────────────────────────────────────────────────────
   async function loadAlerts() {
     const sev  = $('fSeverity').value;
     const typ  = $('fType').value;
@@ -90,7 +91,7 @@
     const tb    = document.querySelector('#alertsTable tbody');
     const empty = $('alertsEmpty');
     tb.innerHTML = '';
-
+    // Reset select-all when table content changes
     const selAll = $('alertsSelectAll');
     if (selAll) selAll.checked = false;
     syncBulkBar();
@@ -102,6 +103,7 @@
     if (empty) empty.style.display = 'none';
 
     res.alerts.forEach(a => {
+      // Extract human-readable name from admin_note
       let name = '';
       try {
         const n = JSON.parse(a.admin_note || '{}');
@@ -131,11 +133,13 @@
         if (e.target.type === 'checkbox') return;
         openModal(a.id);
       });
+      // Checkbox changes sync the bulk bar
       tr.querySelector('.alert-cb').addEventListener('change', syncBulkBar);
       tb.appendChild(tr);
     });
   }
 
+  // ── Bulk actions ─────────────────────────────────────────────────────────
   function setupBulk() {
     $('alertsSelectAll').addEventListener('change', e => {
       qsa('#alertsTable tbody .alert-cb').forEach(cb => cb.checked = e.target.checked);
@@ -178,11 +182,13 @@
     const checked = qsa('#alertsTable tbody .alert-cb:checked').length;
     const bar = $('alertsBulkBar');
     if (bar) {
-      bar.classList.toggle('visible', checked > 0);
-      $('alertsBulkCount').textContent = `${checked} alert${checked !== 1 ? 's' : ''} selected`;
+      bar.style.display = checked > 0 ? 'flex' : 'none';
+      const cnt = $('alertsBulkCount');
+      if (cnt) cnt.textContent = `${checked} alert${checked !== 1 ? 's' : ''} selected`;
     }
   }
 
+  // ── Detail modal ─────────────────────────────────────────────────────────
   function setupModal() {
     $('alertModalClose').addEventListener('click',  hideModal);
     $('alertModalCancel').addEventListener('click', hideModal);
@@ -213,6 +219,7 @@
     const a   = d.alert       || {};
     const occ = d.occurrences || [];
 
+    // Parse admin_note for readable fields
     let caseName = '', noteDetails = null;
     try {
       const n  = JSON.parse(a.admin_note || '{}');
@@ -291,6 +298,9 @@
     loadNotifications().catch(() => {});
   }
 
+  // ── Bell / Notifications ─────────────────────────────────────────────────
+  // Uses the grouped get_alerts.php endpoint.
+  // Clicking an item navigates to alerts.html?id=N so the modal opens.
   async function loadNotifications() {
     const d     = await GET('/api/get_alerts.php');
     const badge = $('notiBadge');
@@ -323,9 +333,11 @@
         </div>
         <span style="font-size:11px;color:#4a6a8a;align-self:center">▶</span>
       `;
+      // Clicking navigates to the alert detail — works from any page
       div.addEventListener('click', () => {
         const dest = `/alerts.html?id=${a.id}`;
         if (window.location.pathname.endsWith('alerts.html')) {
+          // Already on alerts page — just open the modal directly
           $('notiMenu')?.classList.add('hidden');
           openModal(a.id).catch(console.error);
         } else {
@@ -347,6 +359,7 @@
     loadNotifications();
   }
 
+  // ── Utility ───────────────────────────────────────────────────────────────
   function escHtml(s) {
     return String(s).replace(/[&<>"']/g, ch =>
       ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch])

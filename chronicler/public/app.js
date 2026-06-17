@@ -1,17 +1,12 @@
-/*
- OpenSIEM - Security Information & Event Management
- Copyright (c) 2024–present
- Licensed under GNU GPL v3.0
- See LICENSE for details.
-*/
-
-//console.log('[app.js] loaded');
+// /var/www/chronicler/public/app.js
 if (window.__chroniclerInit) {
+  // Prevent double-initialization (in case app.js is included twice)
 } else {
   window.__chroniclerInit = true;
 
   const $ = (id) => document.getElementById(id);
 
+  // ---- Auth gate ----
   (async () => {
     try {
       const res = await fetch('/api/auth/me.php', {cache:'no-store'});
@@ -31,6 +26,7 @@ if (window.__chroniclerInit) {
   }
 
   function bootstrap() {
+    // Safety caps to avoid unbounded DOM growth / polling
     const LOG_CAP = 500;         // max DOM lines for live logs
     const LINE_MAX = 2000;       // max chars per log line
     const MAX_POINTS = 60;       // max datapoints per chart (keep last N points)
@@ -71,25 +67,6 @@ if (window.__chroniclerInit) {
     async function loadWidgets() {
       try {
         const w = await api('dashboard/widgets.php');
-        console.log('[widgets response]', w);
-        console.log('[wSevCritical el]', document.getElementById('wSevCritical'));
-        console.log('[sev-card el]', document.querySelector('.sev-card'));
-        const sevCard = document.querySelector('.sev-card');
-        if (sevCard) {
-          const cs = window.getComputedStyle(sevCard);
-          console.log('[sev-card computed]', {
-            display:    cs.display,
-            visibility: cs.visibility,
-            opacity:    cs.opacity,
-            height:     cs.height,
-            width:      cs.width,
-            overflow:   cs.overflow,
-            gridColumn: cs.gridColumn,
-            position:   cs.position,
-          });
-          console.log('[sev-card rect]', sevCard.getBoundingClientRect());
-        }
-
         // ── Threat level ──────────────────────────────────────────────
         const card  = $('threatCard');
         const lvl   = $('threatLevel');
@@ -175,6 +152,8 @@ if (window.__chroniclerInit) {
         }
 
         // ── Severity tri-widget — today's alert counts ────────────────
+        // Uses sev_today (all alerts today, active + acked) so counts are
+        // always non-zero if any alerts fired today, not just unacked ones.
         const sev = w.sev_today || w.threat_counts || {};
         if ($('wSevCritical')) $('wSevCritical').textContent = sev.critical ?? 0;
         if ($('wSevHigh'))     $('wSevHigh').textContent     = sev.high     ?? 0;
@@ -191,6 +170,7 @@ if (window.__chroniclerInit) {
       } catch(e) { /* ignore */ }
     }
 
+    // ---------- Live logs (tail) ----------
     let lastSince = null;
     async function loadLiveLogs() {
       try {
@@ -207,6 +187,7 @@ if (window.__chroniclerInit) {
           lastSince = d.logs[d.logs.length - 1].ts;
           box.scrollTop = box.scrollHeight;
         }
+        // ✅ Always enforce the cap, not just when new logs arrive
         while (box.children.length > LOG_CAP) box.removeChild(box.firstChild);
       } catch(e) { /* ignore */ }
     }
@@ -273,6 +254,7 @@ if (window.__chroniclerInit) {
       } catch(e) { console.error('client stats', e); }
     }
 
+    // ---------- Search ----------
     $('searchBtn')?.addEventListener('click', async () => {
       const q = $('logQuery').value.trim();
       if (!q) return;
@@ -336,6 +318,7 @@ if (window.__chroniclerInit) {
             </div>
             <span style="font-size:11px;color:#4a6a8a;align-self:center">▶</span>
           `;
+          // Click navigates to alerts page; the ?id= param auto-opens the detail modal
           row.addEventListener('click', () => {
             notiMenu?.classList.add('hidden');
             window.location.href = `/alerts.html?id=${a.id}`;
@@ -354,6 +337,7 @@ if (window.__chroniclerInit) {
       }
     });
 
+    // ---------- Charts from /api/dashboard/stats.php ----------
     let chartAlertsSeverity, chartMsgsPerHour, chartCorrelationCases, chartTopIPs, chartArtifactsSeverity;
 
     function makeBar(ctx, labels, data, label, color) {
@@ -382,6 +366,7 @@ if (window.__chroniclerInit) {
       try {
         const s = await api('dashboard/stats.php');
 
+        // Doughnut: Alerts by severity (24h)
         {
           const sevOrder = ['low','mid','high','critical'];
           const labels = sevOrder.map(x => x.toUpperCase());
@@ -389,7 +374,7 @@ if (window.__chroniclerInit) {
           const colors = ['#9ef59e','#ffd66e','#ff9a9a','#ff5b5b'];
           const ctx = document.getElementById('chartAlertsSeverity');
           if (ctx) {
-            const existing = Chart.getChart(ctx); //Check for orphaned instance
+            const existing = Chart.getChart(ctx); // ✅ Check for orphaned instance
             if (existing) existing.destroy();
             chartAlertsSeverity = makeDoughnut(ctx, labels, data, colors);
           }
