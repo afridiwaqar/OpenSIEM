@@ -1,10 +1,4 @@
-<!--
- OpenSIEM - Security Information & Event Management
- Copyright (c) 2024–present
- Licensed under GNU GPL v3.0
- See LICENSE for details.
--->
-
+<!-- /var/www/chronicler/public/clients.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -40,6 +34,19 @@
     .svc-pill.ok   { background:#0a1f0a; border-color:#1a4020; color:#7ecb7e; }
     .svc-pill.down { background:#1f0a0a; border-color:#401a1a; color:#ff6b6b; }
 
+    .health-badge   { font-size:10px; padding:2px 8px; border-radius:10px; font-weight:700;
+                      text-transform:uppercase; letter-spacing:.04em; }
+    .health-badge.online  { background:#0a1f0a; color:#7ecb7e; border:1px solid #1a4020; }
+    .health-badge.offline { background:#3a0a0a; color:#ff6b6b; border:1px solid #5a1a1a; animation:pulse-offline 2s infinite; }
+    @keyframes pulse-offline { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+    .health-summary { display:flex; gap:14px; margin-bottom:12px; font-size:12px; color:#9aa8bd; }
+    .health-summary b { color:#c8dff5; }
+    .health-summary .off-count { color:#ff6b6b; }
+
+    .threshold-input { width:50px; background:#0a0f17; border:1px solid #1c2434; color:#b8c7dc;
+                       border-radius:4px; padding:2px 4px; font-size:11px; }
+
     .empty { color:#4a6a8a; font-size:13px; }
 
     .table { width:100%; border-collapse:collapse; }
@@ -57,7 +64,6 @@
     <a href="/alerts.html">Alerts</a>
     <a href="/logs.html">Logs</a>
     <a href="/reports.html">Reports</a>
-    <a href="/archive.html">Archive</a>
     <a class="active" href="/clients.html">Clients</a>
     <a href="/users.html">Users</a>
     <a href="/settings.html">Settings</a>
@@ -76,6 +82,11 @@
   <div class="page-wrap">
     <section class="panel">
       <h3>Client Health</h3>
+      <div id="healthSummary" class="health-summary"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+        <button id="btnCheckNow" class="btn small">⟳ Check Now</button>
+        <button id="btnHealthSettings" class="btn small secondary">⚙ Threshold Settings</button>
+      </div>
       <div id="clientCards" class="cards-grid">
         <div class="empty">Loading…</div>
       </div>
@@ -88,6 +99,52 @@
         <tbody><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
       </table>
     </section>
+  </div>
+
+  <!-- Watcher health threshold settings modal -->
+  <div id="healthModal" class="modal-backdrop hidden">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <span>Watcher Health Settings</span>
+        <button id="healthModalClose" class="btn small">✕</button>
+      </div>
+      <div class="modal-body" style="padding:16px">
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:12px;color:#9aa8bd;margin-bottom:4px">
+            Default offline threshold (minutes)
+          </label>
+          <input type="number" id="hsDefaultMinutes" min="1" style="width:100%;box-sizing:border-box">
+          <div style="font-size:11px;color:#4a6a8a;margin-top:4px">
+            A watcher is marked offline if no heartbeat is received within this many minutes.
+            Applies to any watcher without its own override below.
+          </div>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:12px;color:#9aa8bd;margin-bottom:4px">
+            Check interval (seconds)
+          </label>
+          <input type="number" id="hsCheckInterval" min="10" style="width:100%;box-sizing:border-box">
+          <div style="font-size:11px;color:#4a6a8a;margin-top:4px">
+            How often the background monitor scans for offline watchers.
+          </div>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#b8c7dc">
+            <input type="checkbox" id="hsEnabled"> Enable watcher health monitoring
+          </label>
+        </div>
+
+        <hr style="border-color:#1c2434;margin:16px 0">
+
+        <div style="font-size:12px;color:#9aa8bd;margin-bottom:8px">Per-client overrides</div>
+        <div id="hsPerClientList" style="max-height:200px;overflow-y:auto"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="hsSave" class="btn primary">Save Settings</button>
+        <button id="hsCancel" class="btn">Close</button>
+      </div>
+    </div>
+    <div class="modal-backdrop-overlay"></div>
   </div>
 
   <script src="/clients.js"></script>

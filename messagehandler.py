@@ -1,3 +1,5 @@
+# messagehandler.py
+
 import logging
 import re
 import os
@@ -6,12 +8,16 @@ from datetime import datetime
 import collector
 import ipchecker
 import correlation
+import watcher_health
 
 from alarm_system import alarm_system
 
 
 def _syslog_sev_to_alarm(syslog_sev: str) -> str:
-
+    """
+    Map syslog/parser severity strings to OpenSIEM severity levels.
+    OpenSIEM uses: low / mid / high / critical
+    """
     s = str(syslog_sev).lower().strip()
     if s in ('emerg', 'alert', 'crit', 'critical', 'fatal', 'panic'):
         return 'critical'
@@ -26,6 +32,10 @@ def processMessage(conn, addr, module_dict, msg, conn_museum):
     if msg.startswith('<SystemStats>'):
         return
     if msg.startswith('__HEARTBEAT__'):
+        try:
+            watcher_health.record_heartbeat(addr[0])
+        except Exception as e:
+            logging.warning(f"watcher_health heartbeat record failed: {e}")
         return
     if not msg.strip():
         return
@@ -38,6 +48,11 @@ def processMessage(conn, addr, module_dict, msg, conn_museum):
         return
 
     source_ip, full_log_source, full_log = match.groups()
+
+    try:
+        watcher_health.record_heartbeat(source_ip)
+    except Exception as e:
+        logging.warning(f"watcher_health message record failed: {e}")
 
     if ipchecker.check_ip(match.group(0)):
         logging.critical(f"BLACKLISTED IP DETECTED: {source_ip}")
@@ -106,4 +121,3 @@ def processMessage(conn, addr, module_dict, msg, conn_museum):
     )
 
     correlation.correlate(msg_id, parsed_log, source_ip=source_ip)
-

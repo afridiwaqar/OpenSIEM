@@ -46,6 +46,7 @@ import serverstate
 from tcphandler import tcp_handle_client
 from malicious_keywords_manager import KeywordUpdater
 from archiver import Archiver
+from watcher_health import WatcherHealthMonitor
 
 TCP_PORT = 11514
 UDP_PORT = 10514
@@ -180,6 +181,9 @@ if __name__ == "__main__":
 
     archiver = Archiver()
     archiver.start()
+
+    watcher_health_monitor = WatcherHealthMonitor()
+    watcher_health_monitor.start()
 
     serverstate.start()
     subprocess.Popen(['python3', 'spector_state_observer.py'])
