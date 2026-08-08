@@ -721,6 +721,8 @@
     $('testResults').style.display = 'block';
     $('testResults').innerHTML = '<div style="color:#7a9bbf;font-size:13px">⏳ Testing connection...</div>';
     const payload = getBePayload();
+    const editId  = $('btnSaveBackend')?.dataset?.editId;
+    if (editId) payload.id = parseInt(editId);
     const res = await POST('/api/archive/storage.php', { action: 'test', ...payload });
     renderTestResults(res);
   }
@@ -743,8 +745,10 @@
       <ul class="step-list">${stepHtml}</ul>
       ${res.ok
         ? `<div style="color:#7ecb7e;margin-top:8px;font-size:13px">✓ Connection test passed</div>`
-        : `<div style="color:#ff6b6b;margin-top:8px;font-size:13px">✗ ${esc(res.error)}</div>`
+        : `<div style="color:#ff6b6b;margin-top:8px;font-size:13px">✗ ${esc(res.error || 'Test failed')}</div>`
       }
+      ${res.detail ? `<div style="color:#f0c040;font-size:12px;margin-top:4px">${esc(res.detail)}</div>` : ''}
+      ${res.hint   ? `<div style="color:#4a6a8a;font-size:11px;margin-top:4px">Hint: ${esc(res.hint)}</div>` : ''}
       ${res.available_gb != null
         ? `<div style="color:#4a6a8a;font-size:12px;margin-top:4px">Available: ${res.available_gb} GB</div>`
         : ''}
@@ -753,10 +757,22 @@
 
   async function saveBackend() {
     const payload = getBePayload();
+    const editId  = $('btnSaveBackend')?.dataset?.editId;
+    if (editId) payload.id = parseInt(editId);
+
     const res = await POST('/api/archive/storage.php', { action: 'save', ...payload });
     if (!res.ok) { alert(`Save failed: ${res.error}`); return; }
-    if (confirm('Backend saved. Set as active backend?')) {
+
+    if ($('btnSaveBackend')) delete $('btnSaveBackend').dataset.editId;
+    const hint = $('editHint');
+    if (hint) hint.remove();
+    $('backendForm').style.border = '';
+    $('beName').value = '';
+
+    if (!editId && confirm('Backend saved. Set as active backend?')) {
       await POST('/api/archive/storage.php', { action: 'activate', id: res.id });
+    } else if (editId) {
+      alert('Backend updated.');
     }
     loadStorageBackends();
   }
@@ -779,6 +795,8 @@
               ${b.is_active ? '<span class="frozen-badge" style="background:#0e3d6e;color:#7ecb7e">ACTIVE</span>' : ''}
             </div>
             <div style="display:flex;gap:6px">
+              <button class="btn secondary" style="font-size:11px;padding:3px 10px"
+                onclick="editBackend(${b.id})">Edit</button>
               ${!b.is_active
                 ? `<button class="btn secondary" style="font-size:11px;padding:3px 10px"
                      onclick="activateBackend(${b.id})">Set Active</button>`
@@ -791,9 +809,9 @@
           </div>
           <div style="font-size:12px;color:#4a6a8a;margin-top:6px">
             Last tested: ${esc(b.last_tested_at?.slice(0,16) || 'never')}
-            ${b.last_test_ok === true
+            ${b.last_test_ok === 'true' || b.last_test_ok === true
               ? '<span style="color:#7ecb7e;margin-left:8px">✓ Passed</span>'
-              : b.last_test_ok === false
+              : b.last_test_ok === 'false' || b.last_test_ok === false
                 ? `<span style="color:#ff6b6b;margin-left:8px">✗ ${esc(b.last_test_msg)}</span>`
                 : ''}
           </div>
@@ -801,6 +819,51 @@
       ).join('')
       : '<div class="empty">No storage backends configured.</div>';
   }
+
+  window.editBackend = async function(id) {
+    const res = await GET(`/api/archive/storage.php?action=get&id=${id}`);
+    if (!res.ok) { alert(`Could not load backend: ${res.error}`); return; }
+    const b = res.backend;
+
+    $('btnSaveBackend').dataset.editId = id;
+    $('beName').value = b.name || '';
+
+    activeBeType = b.backend_type;
+    document.querySelectorAll('.bt-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.be === activeBeType);
+    });
+    showBeFields(activeBeType);
+
+    const cfg = b.config || {};
+    if (activeBeType === 'local') {
+      $('beLocalPath').value = cfg.path || '';
+    } else if (activeBeType === 'sftp') {
+      $('beSftpHost').value = cfg.host        || '';
+      $('beSftpPort').value = cfg.port        || 22;
+      $('beSftpPath').value = cfg.remote_path || '';
+      $('beSftpUser').value = '';
+      $('beSftpKey').value  = cfg.key_path    || '';
+      $('beSftpPass').value = '';
+    } else if (activeBeType === 's3') {
+      $('beS3Endpoint').value    = cfg.endpoint_url || '';
+      $('beS3Bucket').value      = cfg.bucket       || '';
+      $('beS3Region').value      = cfg.region       || 'us-east-1';
+      $('beS3Prefix').value      = cfg.prefix       || '';
+      $('beS3PathStyle').checked = !!cfg.path_style;
+      $('beS3Key').value         = '';
+      $('beS3Secret').value      = '';
+    }
+
+    $('backendForm').scrollIntoView({ behavior: 'smooth' });
+    $('backendForm').style.border = '1px solid #1a56a0';
+    const existing = $('editHint');
+    if (existing) existing.remove();
+    const hint = document.createElement('div');
+    hint.id = 'editHint';
+    hint.style.cssText = 'font-size:12px;color:#7a9bbf;margin-bottom:10px';
+    hint.textContent = `Editing: ${b.name} — leave credential fields blank to keep existing credentials.`;
+    $('backendForm').insertBefore(hint, $('backendForm').firstChild);
+  };
 
   window.activateBackend = async function(id) {
     if (!confirm('Set this as the active backend? All future archive writes will use it.')) return;
@@ -815,6 +878,7 @@
     if (!res.ok) alert(res.error);
     else loadStorageBackends();
   };
+
 
   // ══════════════════════════════════════════════════════════════════════════
   // AUDIT LOG

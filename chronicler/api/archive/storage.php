@@ -37,11 +37,30 @@ try {
 
         case 'list':
             $rows = $db->query(
-                "SELECT id, name, backend_type, is_active,
+                "SELECT id, name, backend_type, is_active, config_json,
                         last_tested_at, last_test_ok, last_test_msg
                  FROM archive_storage_config ORDER BY id"
             )->fetchAll(PDO::FETCH_ASSOC);
+            // Decode config_json so JS can use it to populate the edit form
+            foreach ($rows as &$row) {
+                $row['config'] = json_decode($row['config_json'] ?? '{}', true);
+                unset($row['config_json']);
+            }
             echo json_encode(['ok' => true, 'backends' => $rows]);
+            break;
+
+        case 'get':
+            $id  = (int)($_GET['id'] ?? 0);
+            $row = $db->prepare(
+                "SELECT id, name, backend_type, is_active, config_json
+                 FROM archive_storage_config WHERE id = ?"
+            );
+            $row->execute([$id]);
+            $r = $row->fetch(PDO::FETCH_ASSOC);
+            if (!$r) { http_response_code(404); echo json_encode(['ok'=>false,'error'=>'Not found']); exit; }
+            $r['config'] = json_decode($r['config_json'] ?? '{}', true);
+            unset($r['config_json']);
+            echo json_encode(['ok' => true, 'backend' => $r]);
             break;
 
         case 'delete':
@@ -125,31 +144,90 @@ function _save_storage(PDO $db, array $body): void {
 
 function _test_storage(array $body): void {
     $backend_type = $body['backend_type'] ?? '';
-    $config       = $body['config'] ?? [];
-    $credentials  = $body['credentials'] ?? [];
+    $config       = $body['config']       ?? [];
+    $credentials  = $body['credentials']  ?? [];
 
-    $cmd_input = json_encode([
+    // Possible locations for the test script
+    $candidates = [
+        '/opt/opensiem/test_storage_backend.py',
+        '/home/waqar/OpenSIEM/test_storage_backend.py',
+        dirname(__FILE__) . '/../../../test_storage_backend.py',
+    ];
+    $script = null;
+    foreach ($candidates as $c) {
+        if (file_exists($c)) { $script = $c; break; }
+    }
+
+    if (!$script) {
+        echo json_encode([
+            'ok'    => false,
+            'error' => 'test_storage_backend.py not found. Deploy it to /opt/opensiem/test_storage_backend.py',
+            'steps' => [],
+        ]);
+        return;
+    }
+
+    $tmp = tempnam(sys_get_temp_dir(), 'opensiem_storage_test_');
+    file_put_contents($tmp, json_encode([
         'backend_type' => $backend_type,
         'config'       => $config,
         'credentials'  => $credentials,
-    ]);
+    ]));
 
-    $tmp = tempnam(sys_get_temp_dir(), 'opensiem_storage_test_');
-    file_put_contents($tmp, $cmd_input);
+    $descriptors = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+    $proc = proc_open(
+        "python3 " . escapeshellarg($script) . " " . escapeshellarg($tmp),
+        $descriptors, $pipes
+    );
 
-    $script = dirname(__FILE__) . '/../../server/test_storage_backend.py';
-    $cmd    = "python3 " . escapeshellarg($script) . " " . escapeshellarg($tmp) . " 2>&1";
-    $output = shell_exec($cmd);
-    @unlink($tmp);
+    if (!is_resource($proc)) {
+        @unlink($tmp);
+        echo json_encode(['ok' => false, 'error' => 'Failed to start test script process', 'steps' => []]);
+        return;
+    }
 
-    $result = json_decode($output, true);
+    fclose($pipes[0]);
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    proc_close($proc);
+    @unlink($tmp);  // delete AFTER Python has finished reading it
+
+    $result = json_decode(trim($stdout), true);
     if (!$result) {
         echo json_encode([
             'ok'    => false,
-            'error' => 'Storage test script failed',
-            'raw'   => $output,
+            'error' => 'Test script produced no output',
+            'detail'=> trim($stderr) ?: 'No error details available',
+            'hint'  => 'Check python3 is available and pyarrow/paramiko/boto3 installed',
+            'steps' => [],
         ]);
         return;
+    }
+
+    if (!empty($stderr)) {
+        $result['warnings'] = trim($stderr);
+    }
+
+    // Persist test result so the backend card shows up-to-date status
+    if (!empty($body['id'])) {
+        try {
+            $db = pdo();
+            $db->prepare(
+                "UPDATE archive_storage_config
+                 SET last_tested_at = now(), last_test_ok = ?, last_test_msg = ?
+                 WHERE id = ?"
+            )->execute([
+                $result['ok'] ? 'true' : 'false',
+                $result['error'] ?? ($result['ok'] ? 'All checks passed' : 'Unknown error'),
+                (int)$body['id'],
+            ]);
+        } catch (Exception $e) { /* non-fatal */ }
     }
 
     echo json_encode($result);
