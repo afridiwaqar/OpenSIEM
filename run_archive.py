@@ -11,9 +11,13 @@ import sys
 import json
 import argparse
 import logging
+import os
+
 from datetime import date, datetime, timedelta
 
 sys.path.insert(0, './')
+
+os.makedirs('/var/log/opensiem', exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +25,6 @@ logging.basicConfig(
     handlers=[logging.FileHandler('/var/log/opensiem/archiver.log'),
               logging.StreamHandler(sys.stderr)]
 )
-
 
 def run_archive(target_date_str: str):
     from archiver import run_manual_archive
@@ -252,7 +255,6 @@ if __name__ == '__main__':
 
     os.makedirs('/var/log/opensiem', exist_ok=True)
 
-    import os
     if args.date:
         run_archive(args.date)
     elif args.job:

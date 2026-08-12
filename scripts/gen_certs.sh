@@ -31,8 +31,11 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+ARCHIVE_KEY_FILE="$CERT_DIR/archive.key"
+
 mkdir -p "$CERT_DIR"
-chmod 755 "$CERT_DIR"
+chown root:www-data "$CERT_DIR"
+chmod 750 "$CERT_DIR"
 
 if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
     echo -e "${YLW}Existing certificates found.${NC}"
@@ -74,6 +77,33 @@ echo -e "${GRN}✓ Certificate generated successfully${NC}"
 echo ""
 echo "  Certificate : $CERT_FILE"
 echo "  Private key : $KEY_FILE"
+echo ""
+
+# ── Archive credentials encryption key ──────────────────────────────────
+# Used by storage.php / archive_storage.py to encrypt/decrypt SFTP & S3
+# credentials at rest in the database. Unrelated to the TLS cert above —
+# provisioned here only because it lives in the same directory and needs
+# the same "run once, as root, before the app touches it" treatment.
+if [ -f "$ARCHIVE_KEY_FILE" ]; then
+    echo -e "${YLW}Archive encryption key already exists — leaving it in place.${NC}"
+    echo "  (Regenerating it would make any already-encrypted stored credentials unreadable.)"
+else
+    echo "Generating archive credentials encryption key..."
+    if ! python3 -c "from cryptography.fernet import Fernet" 2>/dev/null; then
+        echo -e "${RED}✗ Python 'cryptography' package not found.${NC}"
+        echo "  Install it first:  pip install cryptography --break-system-packages"
+        echo "  Then re-run this script to generate archive.key."
+    else
+        python3 -c "
+from cryptography.fernet import Fernet
+with open('$ARCHIVE_KEY_FILE', 'wb') as f:
+    f.write(Fernet.generate_key())
+"
+        chown www-data:www-data "$ARCHIVE_KEY_FILE" 2>/dev/null || true
+        chmod 600 "$ARCHIVE_KEY_FILE"
+        echo -e "${GRN}✓ Archive encryption key generated: $ARCHIVE_KEY_FILE${NC}"
+    fi
+fi
 echo ""
 echo -e "${YLW}Next steps:${NC}"
 echo ""

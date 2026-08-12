@@ -179,9 +179,14 @@ function _test_storage(array $body): void {
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w'],
     ];
+    // $proc = proc_open(
+    //     "python3 " . escapeshellarg($script) . " " . escapeshellarg($tmp),
+    //     $descriptors, $pipes
+    // );
+
     $proc = proc_open(
-        "python3 " . escapeshellarg($script) . " " . escapeshellarg($tmp),
-        $descriptors, $pipes
+    "timeout --kill-after=5 20 python3 " . escapeshellarg($script) . " " . escapeshellarg($tmp),
+    $descriptors, $pipes
     );
 
     if (!is_resource($proc)) {
