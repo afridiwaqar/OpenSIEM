@@ -30,12 +30,17 @@
 
   // ── Tab switching ──────────────────────────────────────────────────────────
   let activeTab = 'overview';
+  let rhydPollTimer = null;
   document.querySelectorAll('.arch-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.arch-tab').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.arch-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
+      if (tab !== 'rehydrate' && rhydPollTimer) {
+        clearTimeout(rhydPollTimer);
+        rhydPollTimer = null;
+      }
       activeTab = tab;
       document.getElementById(`panel-${tab}`)?.classList.add('active');
       if (tab === 'overview')    loadOverview();
@@ -359,7 +364,6 @@
     });
 
     if (!res.ok) { alert(`Rehydration failed: ${res.error}`); return; }
-    alert(`Rehydration started: ${res.rows_imported?.toLocaleString() || 0} rows imported.`);
     loadRehydrations();
   }
 
@@ -378,11 +382,46 @@
     el.innerHTML = jobs.length
       ? jobs.map(j => renderRehydrationCard(j, true)).join('')
       : '<div class="empty">No rehydrations yet.</div>';
+
+    // Poll while any job is still in flight, so the progress bar and
+    // state (pending → running → active, or → cancelled) update without
+    // the user needing to switch tabs and back.
+    const inFlight = jobs.some(j => j.state === 'pending' || j.state === 'running');
+    if (rhydPollTimer) clearTimeout(rhydPollTimer);
+    if (inFlight && activeTab === 'rehydrate') {
+      rhydPollTimer = setTimeout(loadRehydrations, 4000);
+    }
   }
 
   function renderRehydrationCard(j, showRelease = false) {
-    const state  = j.state || 'unknown';
-    const tables = Array.isArray(j.tables) ? j.tables.join(', ') : (j.tables || '');
+    const state    = j.state || 'unknown';
+    const tables   = Array.isArray(j.tables) ? j.tables.join(', ') : (j.tables || '');
+    const inFlight = state === 'pending' || state === 'running';
+
+    const total = Number(j.partitions_total || 0);
+    const done  = Number(j.partitions_done  || 0);
+    const pct   = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+    const progressHtml = inFlight ? `
+        <div class="rehy-progress-wrap" style="margin-top:8px">
+          <div class="rehy-progress-bar">
+            <div class="rehy-progress-fill" style="width:${total > 0 ? pct : 5}%${total === 0 ? ';opacity:.5' : ''}"></div>
+          </div>
+          <div style="font-size:11px;color:#7a9bbf;margin-top:3px">
+            ${total > 0
+              ? `${done} / ${total} partitions (${pct}%) &nbsp;·&nbsp; ${Number(j.rows_imported || 0).toLocaleString()} rows imported so far`
+              : 'Starting…'}
+          </div>
+        </div>` : '';
+
+    const actionBtn = inFlight
+      ? `<button class="btn secondary" style="font-size:11px;padding:3px 10px"
+           onclick="cancelRehydration(${j.id})">Cancel</button>`
+      : (showRelease && state === 'active'
+          ? `<button class="btn secondary" style="font-size:11px;padding:3px 10px"
+               onclick="releaseRehydration(${j.id})">Release Early</button>`
+          : '');
+
     return `
       <div class="rehy-card">
         <div class="rehy-head">
@@ -391,11 +430,9 @@
             &nbsp;
             <span class="rehy-status ${esc(state)}">${esc(state)}</span>
           </div>
-          ${showRelease && state === 'active'
-            ? `<button class="btn secondary" style="font-size:11px;padding:3px 10px"
-                 onclick="releaseRehydration(${j.id})">Release Early</button>`
-            : ''}
+          ${actionBtn}
         </div>
+        ${progressHtml}
         <div style="font-size:12px;color:#4a6a8a;margin-top:4px">
           Tables: ${esc(tables)} &nbsp;·&nbsp;
           Rows: ${Number(j.rows_imported || 0).toLocaleString()} &nbsp;·&nbsp;
@@ -413,6 +450,13 @@
     if (!confirm('Release this rehydration? Data will be removed from live storage.')) return;
     const res = await POST('/api/archive/rehydrate.php', { action: 'release', id });
     if (!res.ok) { alert(`Release failed: ${res.error}`); return; }
+    loadRehydrations();
+  };
+
+  window.cancelRehydration = async function(id) {
+    if (!confirm('Cancel this rehydration? It will stop after finishing its current batch.')) return;
+    const res = await POST('/api/archive/rehydrate.php', { action: 'cancel', id });
+    if (!res.ok) { alert(`Cancel failed: ${res.error}`); return; }
     loadRehydrations();
   };
 

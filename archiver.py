@@ -10,6 +10,7 @@ import time
 import hashlib
 import logging
 import threading
+import tempfile
 import configparser
 from datetime import datetime, date, timedelta
 from typing import Optional
@@ -224,6 +225,62 @@ def _fetch_messages_for_date(conn, target_date: date, batch_size=5000):
     return cur
 
 
+def _rows_to_table(rows: list) -> tuple:
+    """Builds a pyarrow Table from a batch of rows, without serializing to
+    parquet bytes. Used by the streaming export path so memory is bounded
+    to one batch at a time instead of an entire day's rows."""
+    if not rows:
+        return None, {}
+
+    columns = {field.name: [] for field in PARQUET_SCHEMA}
+    keys_seen = {}
+
+    for row in rows:
+        record = _row_to_parquet_record(row)
+        for field in PARQUET_SCHEMA:
+            val = record.get(field.name)
+            columns[field.name].append(val)
+
+        msg = row.get('message_json') or {}
+        if isinstance(msg, str):
+            try:
+                msg = json.loads(msg)
+            except Exception:
+                msg = {}
+        for k, v in msg.items():
+            if k not in PROMOTED_KEYS:
+                if k not in keys_seen:
+                    keys_seen[k] = [0, v]
+                keys_seen[k][0] += 1
+
+    arrays = []
+    for field in PARQUET_SCHEMA:
+        raw = columns[field.name]
+        if pa.types.is_int64(field.type) or pa.types.is_int32(field.type):
+            arr = pa.array(
+                [int(v) if v is not None else None for v in raw],
+                type=field.type
+            )
+        elif pa.types.is_date32(field.type):
+            arr = pa.array(raw, type=pa.date32())
+        else:
+            arr = pa.array(
+                [str(v) if v is not None else None for v in raw],
+                type=pa.string()
+            )
+        arrays.append(arr)
+
+    table = pa.Table.from_arrays(arrays, schema=PARQUET_SCHEMA)
+    return table, keys_seen
+
+
+def _merge_keys(all_keys: dict, keys: dict) -> None:
+    for k, (cnt, ex) in keys.items():
+        if k not in all_keys:
+            all_keys[k] = [0, ex]
+        all_keys[k][0] += cnt
+
+
 def _build_parquet_bytes(rows: list, compression: str = 'zstd') -> bytes:
     if not rows:
         return b'', {}
@@ -351,60 +408,61 @@ def archive_date(target_date: date, policy: dict,
                {'rows_total': rows_total})
 
         try:
+            # Streams the export via a server-side cursor (already batched
+            # at 5000 rows by _fetch_messages_for_date) directly into a
+            # single ParquetWriter, one batch at a time. Peak memory is
+            # bounded to ~one batch's worth of raw rows plus the writer's
+            # own buffering — NOT the entire day's rows. The previous
+            # version built these same batches, discarded every one of
+            # them, then re-fetched the whole day again via a plain
+            # fetchall() with no batching at all, which is what was
+            # ballooning to 10+ GB RAM and hanging on high-volume days.
             fetch_cur  = _fetch_messages_for_date(conn, target_date)
             batch_rows = []
             all_keys   = {}
             rows_exported = 0
 
-            for db_row in fetch_cur:
-                batch_rows.append(dict(db_row))
-                if len(batch_rows) >= 5000:
-                    data, keys = _build_parquet_bytes(batch_rows, compression)
-                    for k, (cnt, ex) in keys.items():
-                        if k not in all_keys:
-                            all_keys[k] = [0, ex]
-                        all_keys[k][0] += cnt
+            tmp_path = tempfile.mktemp(suffix='.parquet')
+            writer = None
+            try:
+                for db_row in fetch_cur:
+                    batch_rows.append(dict(db_row))
+                    if len(batch_rows) >= 5000:
+                        table, keys = _rows_to_table(batch_rows)
+                        _merge_keys(all_keys, keys)
+                        if writer is None:
+                            writer = pq.ParquetWriter(
+                                tmp_path, PARQUET_SCHEMA,
+                                compression=(compression if compression != 'none' else None)
+                            )
+                        writer.write_table(table)
+                        rows_exported += len(batch_rows)
+                        batch_rows = []
+
+                if batch_rows:
+                    table, keys = _rows_to_table(batch_rows)
+                    _merge_keys(all_keys, keys)
+                    if writer is None:
+                        writer = pq.ParquetWriter(
+                            tmp_path, PARQUET_SCHEMA,
+                            compression=(compression if compression != 'none' else None)
+                        )
+                    writer.write_table(table)
                     rows_exported += len(batch_rows)
-                    batch_rows = []
 
-            if batch_rows:
-                data, keys = _build_parquet_bytes(batch_rows, compression)
-                for k, (cnt, ex) in keys.items():
-                    if k not in all_keys:
-                        all_keys[k] = [0, ex]
-                    all_keys[k][0] += cnt
-                rows_exported += len(batch_rows)
+                if writer is not None:
+                    writer.close()
 
-            fetch_cur.close()
+                fetch_cur.close()
 
-            full_data, _ = _build_parquet_bytes([], compression)
-
-            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            cur.execute(
-                """
-                SELECT
-                    m.message_source AS msg_id,
-                    c.Date AS log_date, c.time AS log_time,
-                    d.device_ip, d.device_name,
-                    ls.source_name, ls.source_path,
-                    p.process_name, p.pid::int AS pid,
-                    m.message AS message_json
-                FROM Message m
-                JOIN Calendar   c  ON c.data_id   = m.Date
-                JOIN Device     d  ON d.device_id = m.device_id
-                JOIN "Log_Source" ls ON ls.source_id = m.log_source
-                JOIN Process    p  ON p.process_id = m.process_id
-                WHERE c.Date = %s
-                ORDER BY m.message_source
-                """,
-                (target_date,)
-            )
-            all_rows = [dict(r) for r in cur.fetchall()]
-            cur.close()
-
-            full_data, keys = _build_parquet_bytes(all_rows, compression)
-            all_keys = keys
-            rows_exported = len(all_rows)
+                if rows_exported == 0:
+                    full_data = b''
+                else:
+                    with open(tmp_path, 'rb') as f:
+                        full_data = f.read()
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
 
             if encrypt:
                 full_data = _encrypt_bytes(full_data)
@@ -483,30 +541,60 @@ def _verify_partition(backend: StorageBackend, file_path: str,
 
 
 def _delete_from_hot(conn, target_date: date, table_name: str,
-                     manifest_id: int, rows_deleted: int):
+                     manifest_id: int, rows_deleted: int,
+                     batch_size: int = 200000):
     try:
-        cur = conn.cursor()
+        total_deleted = 0
+
         if table_name == 'messages':
-            cur.execute(
-                """DELETE FROM Message
-                   WHERE Date IN (
-                       SELECT data_id FROM Calendar WHERE Date = %s
-                   )""",
-                (target_date,)
-            )
+            # Deletes in batches rather than one massive transaction.
+            # With idx_calendar_date and the two FK-column indexes now in
+            # place, each batch should be fast — but batching still bounds
+            # lock hold time and WAL size per transaction, and gives
+            # visible progress instead of one opaque multi-hour black box.
+            while True:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    DELETE FROM Message
+                    WHERE message_id IN (
+                        SELECT m.message_id
+                        FROM Message m
+                        JOIN Calendar c ON c.data_id = m.Date
+                        WHERE c.Date = %s
+                        LIMIT %s
+                    )
+                    """,
+                    (target_date, batch_size)
+                )
+                deleted = cur.rowcount
+                conn.commit()
+                cur.close()
+
+                total_deleted += deleted
+                if deleted > 0:
+                    log.info(f"[ARCHIVE] Deleted batch of {deleted} rows "
+                             f"(running total {total_deleted}) from hot "
+                             f"storage: {table_name} {target_date}")
+                if deleted < batch_size:
+                    break
+
         elif table_name == 'alerts':
+            cur = conn.cursor()
             cur.execute(
                 "DELETE FROM alerts WHERE created_at::date = %s",
                 (target_date,)
             )
-        conn.commit()
-        cur.close()
+            total_deleted = cur.rowcount
+            conn.commit()
+            cur.close()
+
         _update_manifest(conn, manifest_id,
             state='deleted_from_hot',
             deleted_at=datetime.utcnow())
         _audit(conn, 'deleted_from_hot', target_date, table_name, manifest_id,
-               {'rows_deleted': rows_deleted})
-        log.info(f"[ARCHIVE] Deleted {rows_deleted} rows from hot storage: "
+               {'rows_deleted': total_deleted})
+        log.info(f"[ARCHIVE] Deleted {total_deleted} rows from hot storage: "
                  f"{table_name} {target_date}")
     except Exception as e:
         log.error(f"[ARCHIVE] Failed to delete from hot: {e}")

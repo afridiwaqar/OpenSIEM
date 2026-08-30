@@ -1,0 +1,12 @@
+[Unit]
+Description=Run OpenSIEM archiver daily
+
+[Timer]
+# archive_policy.run_time defaults to 02:00 — offset 15 min later so
+# any overnight batch jobs/backups at :00 aren't competing for I/O.
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenSIEM daily log archiver
+After=postgresql.service network.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+# Archives *yesterday's* date — gives the full day a chance to finish
+# being written before it's exported and (per archive_policy) purged
+# from the hot table. %% escapes the % that's otherwise special to
+# systemd unit files.
+ExecStart=/bin/bash -c '/usr/bin/python3 /opt/opensiem/run_archive.py --date $(date -d "yesterday" +\%%Y-\%%m-\%%d)'
+StandardOutput=append:/var/log/opensiem/archive_cron.log
+StandardError=append:/var/log/opensiem/archive_cron.log
