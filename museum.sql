@@ -2,12 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict VxJULGwf5NnqfPzgCSHxW1Q4nM8F45gxnAWJ0flf9FkmhtaHBbFgoceVHYhF69U
+\restrict TjS7Z9fh9rZmCNc6d5VSlespCRhwQfdzQMFaadM4pHNYPvW0oJaW4ci6NTwI3Lo
 
--- Dumped from database version 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)
-
--- Started on 2026-04-02 23:08:53 PKT
+-- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -20,12 +18,25 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+--
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- TOC entry 215 (class 1259 OID 16389)
 -- Name: Log_Source; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -39,7 +50,6 @@ CREATE TABLE public."Log_Source" (
 ALTER TABLE public."Log_Source" OWNER TO postgres;
 
 --
--- TOC entry 216 (class 1259 OID 16394)
 -- Name: Log_Source_source_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -55,8 +65,6 @@ CREATE SEQUENCE public."Log_Source_source_id_seq"
 ALTER SEQUENCE public."Log_Source_source_id_seq" OWNER TO postgres;
 
 --
--- TOC entry 3583 (class 0 OID 0)
--- Dependencies: 216
 -- Name: Log_Source_source_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -64,7 +72,6 @@ ALTER SEQUENCE public."Log_Source_source_id_seq" OWNED BY public."Log_Source".so
 
 
 --
--- TOC entry 234 (class 1259 OID 16545)
 -- Name: alert_occurrences; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -81,7 +88,6 @@ CREATE TABLE public.alert_occurrences (
 ALTER TABLE public.alert_occurrences OWNER TO postgres;
 
 --
--- TOC entry 233 (class 1259 OID 16544)
 -- Name: alert_occurrences_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -97,8 +103,6 @@ CREATE SEQUENCE public.alert_occurrences_id_seq
 ALTER SEQUENCE public.alert_occurrences_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3584 (class 0 OID 0)
--- Dependencies: 233
 -- Name: alert_occurrences_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -106,7 +110,6 @@ ALTER SEQUENCE public.alert_occurrences_id_seq OWNED BY public.alert_occurrences
 
 
 --
--- TOC entry 217 (class 1259 OID 16395)
 -- Name: alerts; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -127,7 +130,6 @@ CREATE TABLE public.alerts (
 ALTER TABLE public.alerts OWNER TO postgres;
 
 --
--- TOC entry 218 (class 1259 OID 16402)
 -- Name: alerts_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -143,8 +145,6 @@ CREATE SEQUENCE public.alerts_id_seq
 ALTER SEQUENCE public.alerts_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3585 (class 0 OID 0)
--- Dependencies: 218
 -- Name: alerts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -152,7 +152,248 @@ ALTER SEQUENCE public.alerts_id_seq OWNED BY public.alerts.id;
 
 
 --
--- TOC entry 219 (class 1259 OID 16403)
+-- Name: archive_audit_log; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.archive_audit_log (
+    id integer NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now(),
+    action character varying(50) NOT NULL,
+    performed_by character varying(100),
+    user_id integer,
+    partition_date date,
+    table_name character varying(100),
+    manifest_id integer,
+    detail jsonb DEFAULT '{}'::jsonb,
+    ip_address inet,
+    success boolean DEFAULT true,
+    error_msg text
+);
+
+
+ALTER TABLE public.archive_audit_log OWNER TO postgres;
+
+--
+-- Name: archive_audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.archive_audit_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.archive_audit_log_id_seq OWNER TO postgres;
+
+--
+-- Name: archive_audit_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.archive_audit_log_id_seq OWNED BY public.archive_audit_log.id;
+
+
+--
+-- Name: archive_manifest; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.archive_manifest (
+    id integer NOT NULL,
+    partition_date date NOT NULL,
+    table_name character varying(100) NOT NULL,
+    file_path text NOT NULL,
+    row_count bigint DEFAULT 0 NOT NULL,
+    file_size_bytes bigint DEFAULT 0 NOT NULL,
+    sha256_hash character(64),
+    compression character varying(20) DEFAULT 'zstd'::character varying,
+    encrypted boolean DEFAULT false,
+    state character varying(20) DEFAULT 'pending'::character varying,
+    frozen boolean DEFAULT false,
+    frozen_by character varying(100),
+    frozen_reason text,
+    frozen_at timestamp with time zone,
+    partial boolean DEFAULT false,
+    rows_exported bigint DEFAULT 0,
+    rows_total bigint DEFAULT 0,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    verified_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    error_msg text,
+    backend_type character varying(20),
+    storage_config_id integer,
+    CONSTRAINT archive_manifest_state_check CHECK (((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('exporting'::character varying)::text, ('exported'::character varying)::text, ('verified'::character varying)::text, ('verify_failed'::character varying)::text, ('deleted_from_hot'::character varying)::text, ('failed'::character varying)::text])))
+);
+
+
+ALTER TABLE public.archive_manifest OWNER TO postgres;
+
+--
+-- Name: archive_manifest_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.archive_manifest_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.archive_manifest_id_seq OWNER TO postgres;
+
+--
+-- Name: archive_manifest_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.archive_manifest_id_seq OWNED BY public.archive_manifest.id;
+
+
+--
+-- Name: archive_policy; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.archive_policy (
+    id integer DEFAULT 1 NOT NULL,
+    enabled boolean DEFAULT false,
+    hot_retention_days integer DEFAULT 90,
+    cold_retention_days integer DEFAULT 1095,
+    run_time time without time zone DEFAULT '02:00:00'::time without time zone,
+    compression character varying(20) DEFAULT 'zstd'::character varying,
+    encrypt_at_rest boolean DEFAULT false,
+    verify_after_export boolean DEFAULT true,
+    delete_after_verify boolean DEFAULT true,
+    partial_export_behaviour character varying(20) DEFAULT 'keep'::character varying,
+    storage_alert_threshold_gb integer DEFAULT 100,
+    archive_messages boolean DEFAULT true,
+    archive_alerts boolean DEFAULT true,
+    archive_alert_occurrences boolean DEFAULT false,
+    alerts_retention_days integer DEFAULT 365,
+    updated_at timestamp with time zone DEFAULT now(),
+    updated_by character varying(100),
+    CONSTRAINT archive_policy_compression_check CHECK (((compression)::text = ANY (ARRAY[('snappy'::character varying)::text, ('zstd'::character varying)::text, ('none'::character varying)::text]))),
+    CONSTRAINT archive_policy_id_check CHECK ((id = 1)),
+    CONSTRAINT archive_policy_partial_export_behaviour_check CHECK (((partial_export_behaviour)::text = ANY (ARRAY[('keep'::character varying)::text, ('delete_exported'::character varying)::text])))
+);
+
+
+ALTER TABLE public.archive_policy OWNER TO postgres;
+
+--
+-- Name: archive_rehydration; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.archive_rehydration (
+    id integer NOT NULL,
+    date_from date NOT NULL,
+    date_to date NOT NULL,
+    tables text[] NOT NULL,
+    state character varying(20) DEFAULT 'pending'::character varying,
+    rows_imported bigint DEFAULT 0,
+    started_by character varying(100),
+    user_id integer,
+    auto_release_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    completed_at timestamp with time zone,
+    released_at timestamp with time zone,
+    error_msg text,
+    pid integer,
+    partitions_total integer DEFAULT 0 NOT NULL,
+    partitions_done integer DEFAULT 0 NOT NULL,
+    CONSTRAINT archive_rehydration_state_check CHECK (((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('active'::character varying)::text, ('releasing'::character varying)::text, ('released'::character varying)::text, ('failed'::character varying)::text, ('cancelled'::character varying)::text])))
+);
+
+
+ALTER TABLE public.archive_rehydration OWNER TO postgres;
+
+--
+-- Name: archive_rehydration_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.archive_rehydration_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.archive_rehydration_id_seq OWNER TO postgres;
+
+--
+-- Name: archive_rehydration_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.archive_rehydration_id_seq OWNED BY public.archive_rehydration.id;
+
+
+--
+-- Name: archive_schema_registry; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.archive_schema_registry (
+    key character varying(200) NOT NULL,
+    first_seen timestamp with time zone DEFAULT now(),
+    last_seen timestamp with time zone DEFAULT now(),
+    occurrence_count bigint DEFAULT 1,
+    promoted boolean DEFAULT false,
+    data_type character varying(20) DEFAULT 'string'::character varying,
+    example_value text,
+    source_parsers text[]
+);
+
+
+ALTER TABLE public.archive_schema_registry OWNER TO postgres;
+
+--
+-- Name: archive_storage_config; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.archive_storage_config (
+    id integer NOT NULL,
+    name character varying(100) NOT NULL,
+    backend_type character varying(20) NOT NULL,
+    is_active boolean DEFAULT false,
+    config_json text DEFAULT '{}'::text NOT NULL,
+    credentials_enc text,
+    last_tested_at timestamp with time zone,
+    last_test_ok boolean,
+    last_test_msg text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT archive_storage_config_backend_type_check CHECK (((backend_type)::text = ANY (ARRAY[('local'::character varying)::text, ('sftp'::character varying)::text, ('s3'::character varying)::text])))
+);
+
+
+ALTER TABLE public.archive_storage_config OWNER TO postgres;
+
+--
+-- Name: archive_storage_config_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.archive_storage_config_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.archive_storage_config_id_seq OWNER TO postgres;
+
+--
+-- Name: archive_storage_config_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.archive_storage_config_id_seq OWNED BY public.archive_storage_config.id;
+
+
+--
 -- Name: calendar; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -166,7 +407,6 @@ CREATE TABLE public.calendar (
 ALTER TABLE public.calendar OWNER TO postgres;
 
 --
--- TOC entry 220 (class 1259 OID 16406)
 -- Name: calendar_data_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -182,8 +422,6 @@ CREATE SEQUENCE public.calendar_data_id_seq
 ALTER SEQUENCE public.calendar_data_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3586 (class 0 OID 0)
--- Dependencies: 220
 -- Name: calendar_data_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -191,7 +429,6 @@ ALTER SEQUENCE public.calendar_data_id_seq OWNED BY public.calendar.data_id;
 
 
 --
--- TOC entry 221 (class 1259 OID 16407)
 -- Name: device; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -207,7 +444,6 @@ CREATE TABLE public.device (
 ALTER TABLE public.device OWNER TO postgres;
 
 --
--- TOC entry 222 (class 1259 OID 16412)
 -- Name: device_device_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -223,8 +459,6 @@ CREATE SEQUENCE public.device_device_id_seq
 ALTER SEQUENCE public.device_device_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3587 (class 0 OID 0)
--- Dependencies: 222
 -- Name: device_device_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -232,7 +466,6 @@ ALTER SEQUENCE public.device_device_id_seq OWNED BY public.device.device_id;
 
 
 --
--- TOC entry 223 (class 1259 OID 16413)
 -- Name: login; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -255,7 +488,6 @@ CREATE TABLE public.login (
 ALTER TABLE public.login OWNER TO postgres;
 
 --
--- TOC entry 224 (class 1259 OID 16423)
 -- Name: login_user_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -271,8 +503,6 @@ CREATE SEQUENCE public.login_user_id_seq
 ALTER SEQUENCE public.login_user_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3588 (class 0 OID 0)
--- Dependencies: 224
 -- Name: login_user_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -280,7 +510,6 @@ ALTER SEQUENCE public.login_user_id_seq OWNED BY public.login.user_id;
 
 
 --
--- TOC entry 225 (class 1259 OID 16424)
 -- Name: malicious_artifacts; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -290,14 +519,13 @@ CREATE TABLE public.malicious_artifacts (
     severity character varying(10) DEFAULT 'mid'::character varying,
     added_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     source_url character varying(500),
-    CONSTRAINT malicious_artifacts_severity_check CHECK (((severity)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying, 'critical'::character varying])::text[])))
+    CONSTRAINT malicious_artifacts_severity_check CHECK (((severity)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text, ('critical'::character varying)::text])))
 );
 
 
 ALTER TABLE public.malicious_artifacts OWNER TO postgres;
 
 --
--- TOC entry 226 (class 1259 OID 16433)
 -- Name: message; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -315,7 +543,6 @@ CREATE TABLE public.message (
 ALTER TABLE public.message OWNER TO postgres;
 
 --
--- TOC entry 227 (class 1259 OID 16438)
 -- Name: message_message_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -331,8 +558,6 @@ CREATE SEQUENCE public.message_message_id_seq
 ALTER SEQUENCE public.message_message_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3589 (class 0 OID 0)
--- Dependencies: 227
 -- Name: message_message_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -340,7 +565,6 @@ ALTER SEQUENCE public.message_message_id_seq OWNED BY public.message.message_id;
 
 
 --
--- TOC entry 228 (class 1259 OID 16439)
 -- Name: process; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -354,7 +578,6 @@ CREATE TABLE public.process (
 ALTER TABLE public.process OWNER TO postgres;
 
 --
--- TOC entry 229 (class 1259 OID 16442)
 -- Name: process_process_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -370,8 +593,6 @@ CREATE SEQUENCE public.process_process_id_seq
 ALTER SEQUENCE public.process_process_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3590 (class 0 OID 0)
--- Dependencies: 229
 -- Name: process_process_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -379,7 +600,6 @@ ALTER SEQUENCE public.process_process_id_seq OWNED BY public.process.process_id;
 
 
 --
--- TOC entry 230 (class 1259 OID 16443)
 -- Name: special_messages; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -395,7 +615,6 @@ CREATE TABLE public.special_messages (
 ALTER TABLE public.special_messages OWNER TO postgres;
 
 --
--- TOC entry 236 (class 1259 OID 16841)
 -- Name: special_messages_msg_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -410,8 +629,6 @@ CREATE SEQUENCE public.special_messages_msg_id_seq
 ALTER SEQUENCE public.special_messages_msg_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3591 (class 0 OID 0)
--- Dependencies: 236
 -- Name: special_messages_msg_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -419,7 +636,6 @@ ALTER SEQUENCE public.special_messages_msg_id_seq OWNED BY public.special_messag
 
 
 --
--- TOC entry 231 (class 1259 OID 16450)
 -- Name: use_cases; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -428,14 +644,13 @@ CREATE TABLE public.use_cases (
     case_name character varying NOT NULL,
     entity_field character varying(50) DEFAULT 'ip'::character varying,
     severity character varying(10) DEFAULT 'high'::character varying,
-    CONSTRAINT use_cases_severity_check CHECK (((severity)::text = ANY ((ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying, 'critical'::character varying])::text[])))
+    CONSTRAINT use_cases_severity_check CHECK (((severity)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text, ('critical'::character varying)::text])))
 );
 
 
 ALTER TABLE public.use_cases OWNER TO postgres;
 
 --
--- TOC entry 235 (class 1259 OID 16839)
 -- Name: use_cases_case_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -450,8 +665,6 @@ CREATE SEQUENCE public.use_cases_case_id_seq
 ALTER SEQUENCE public.use_cases_case_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3592 (class 0 OID 0)
--- Dependencies: 235
 -- Name: use_cases_case_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -459,7 +672,6 @@ ALTER SEQUENCE public.use_cases_case_id_seq OWNED BY public.use_cases.case_id;
 
 
 --
--- TOC entry 232 (class 1259 OID 16456)
 -- Name: user_permissions; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -468,14 +680,74 @@ CREATE TABLE public.user_permissions (
     can_create boolean DEFAULT false,
     can_read boolean DEFAULT true,
     can_update boolean DEFAULT false,
-    can_delete boolean DEFAULT false
+    can_delete boolean DEFAULT false,
+    archive_role character varying(20) DEFAULT 'none'::character varying,
+    CONSTRAINT user_permissions_archive_role_check CHECK (((archive_role)::text = ANY (ARRAY[('none'::character varying)::text, ('viewer'::character varying)::text, ('operator'::character varying)::text, ('administrator'::character varying)::text])))
 );
 
 
 ALTER TABLE public.user_permissions OWNER TO postgres;
 
 --
--- TOC entry 3336 (class 2604 OID 16463)
+-- Name: watcher_health; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.watcher_health (
+    id integer NOT NULL,
+    client_name character varying(150),
+    source_ip character varying(45) NOT NULL,
+    last_heartbeat_at timestamp with time zone DEFAULT now(),
+    last_message_at timestamp with time zone,
+    offline_threshold_minutes integer,
+    is_online boolean DEFAULT true,
+    marked_offline_at timestamp with time zone,
+    alert_id_fk integer,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.watcher_health OWNER TO postgres;
+
+--
+-- Name: watcher_health_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.watcher_health_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.watcher_health_id_seq OWNER TO postgres;
+
+--
+-- Name: watcher_health_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.watcher_health_id_seq OWNED BY public.watcher_health.id;
+
+
+--
+-- Name: watcher_health_settings; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.watcher_health_settings (
+    id integer DEFAULT 1 NOT NULL,
+    default_offline_threshold_minutes integer DEFAULT 5,
+    check_interval_seconds integer DEFAULT 60,
+    enabled boolean DEFAULT true,
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT watcher_health_settings_id_check CHECK ((id = 1))
+);
+
+
+ALTER TABLE public.watcher_health_settings OWNER TO postgres;
+
+--
 -- Name: Log_Source source_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -483,7 +755,6 @@ ALTER TABLE ONLY public."Log_Source" ALTER COLUMN source_id SET DEFAULT nextval(
 
 
 --
--- TOC entry 3362 (class 2604 OID 16548)
 -- Name: alert_occurrences id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -491,7 +762,6 @@ ALTER TABLE ONLY public.alert_occurrences ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
--- TOC entry 3337 (class 2604 OID 16464)
 -- Name: alerts id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -499,7 +769,34 @@ ALTER TABLE ONLY public.alerts ALTER COLUMN id SET DEFAULT nextval('public.alert
 
 
 --
--- TOC entry 3340 (class 2604 OID 16465)
+-- Name: archive_audit_log id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_audit_log ALTER COLUMN id SET DEFAULT nextval('public.archive_audit_log_id_seq'::regclass);
+
+
+--
+-- Name: archive_manifest id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_manifest ALTER COLUMN id SET DEFAULT nextval('public.archive_manifest_id_seq'::regclass);
+
+
+--
+-- Name: archive_rehydration id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_rehydration ALTER COLUMN id SET DEFAULT nextval('public.archive_rehydration_id_seq'::regclass);
+
+
+--
+-- Name: archive_storage_config id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_storage_config ALTER COLUMN id SET DEFAULT nextval('public.archive_storage_config_id_seq'::regclass);
+
+
+--
 -- Name: calendar data_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -507,7 +804,6 @@ ALTER TABLE ONLY public.calendar ALTER COLUMN data_id SET DEFAULT nextval('publi
 
 
 --
--- TOC entry 3341 (class 2604 OID 16466)
 -- Name: device device_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -515,7 +811,6 @@ ALTER TABLE ONLY public.device ALTER COLUMN device_id SET DEFAULT nextval('publi
 
 
 --
--- TOC entry 3342 (class 2604 OID 16467)
 -- Name: login user_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -523,7 +818,6 @@ ALTER TABLE ONLY public.login ALTER COLUMN user_id SET DEFAULT nextval('public.l
 
 
 --
--- TOC entry 3351 (class 2604 OID 16468)
 -- Name: message message_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -531,7 +825,6 @@ ALTER TABLE ONLY public.message ALTER COLUMN message_id SET DEFAULT nextval('pub
 
 
 --
--- TOC entry 3352 (class 2604 OID 16469)
 -- Name: process process_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -539,7 +832,6 @@ ALTER TABLE ONLY public.process ALTER COLUMN process_id SET DEFAULT nextval('pub
 
 
 --
--- TOC entry 3353 (class 2604 OID 16842)
 -- Name: special_messages msg_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -547,7 +839,6 @@ ALTER TABLE ONLY public.special_messages ALTER COLUMN msg_id SET DEFAULT nextval
 
 
 --
--- TOC entry 3355 (class 2604 OID 16840)
 -- Name: use_cases case_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -555,219 +846,13 @@ ALTER TABLE ONLY public.use_cases ALTER COLUMN case_id SET DEFAULT nextval('publ
 
 
 --
--- TOC entry 3556 (class 0 OID 16389)
--- Dependencies: 215
--- Data for Name: Log_Source; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Name: watcher_health id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
-COPY public."Log_Source" (source_id, source_name, source_path) FROM stdin;
-\.
+ALTER TABLE ONLY public.watcher_health ALTER COLUMN id SET DEFAULT nextval('public.watcher_health_id_seq'::regclass);
 
 
 --
--- TOC entry 3575 (class 0 OID 16545)
--- Dependencies: 234
--- Data for Name: alert_occurrences; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.alert_occurrences (id, alert_id_fk, occurred_at, fk_msg_id, source_ip, details) FROM stdin;
-\.
-
-
---
--- TOC entry 3558 (class 0 OID 16395)
--- Dependencies: 217
--- Data for Name: alerts; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.alerts (id, alert_id, alert_type, severity, is_active, count, source_ip, acknowledged_time, admin_note, fk_msg_id) FROM stdin;
-\.
-
-
---
--- TOC entry 3560 (class 0 OID 16403)
--- Dependencies: 219
--- Data for Name: calendar; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.calendar (data_id, date, "time") FROM stdin;
-\.
-
-
---
--- TOC entry 3562 (class 0 OID 16407)
--- Dependencies: 221
--- Data for Name: device; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.device (device_id, device_type, device_name, device_ip, device_port) FROM stdin;
-\.
-
-
---
--- TOC entry 3564 (class 0 OID 16413)
--- Dependencies: 223
--- Data for Name: login; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.login (user_id, username, email, password_hash, role, is_active, is_verified, created_at, updated_at, last_login, failed_attempts, locked_until) FROM stdin;
-2	admin	admin@admin.com	$2y$10$fJojaFOd.GT0hY4nOEC6JuJMJNQph8F/a3ZBUFt2wYmp7g4FAL51q	admin	t	t	2026-03-08 00:57:30.801045	\N	\N	0	\N
-\.
-
-
---
--- TOC entry 3566 (class 0 OID 16424)
--- Dependencies: 225
--- Data for Name: malicious_artifacts; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.malicious_artifacts (artifacts, "interval", severity, added_at, source_url) FROM stdin;
-\.
-
-
---
--- TOC entry 3567 (class 0 OID 16433)
--- Dependencies: 226
--- Data for Name: message; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.message (message_id, message_source, date, message, log_source, device_id, process_id) FROM stdin;
-\.
-
-
---
--- TOC entry 3569 (class 0 OID 16439)
--- Dependencies: 228
--- Data for Name: process; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.process (process_id, process_name, pid) FROM stdin;
-\.
-
-
---
--- TOC entry 3571 (class 0 OID 16443)
--- Dependencies: 230
--- Data for Name: special_messages; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.special_messages (case_id_fk, msg_id, message, can_repeat, "order") FROM stdin;
-\.
-
-
---
--- TOC entry 3572 (class 0 OID 16450)
--- Dependencies: 231
--- Data for Name: use_cases; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.use_cases (case_id, case_name, entity_field, severity) FROM stdin;
-\.
-
-
---
--- TOC entry 3573 (class 0 OID 16456)
--- Dependencies: 232
--- Data for Name: user_permissions; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.user_permissions (user_id, can_create, can_read, can_update, can_delete) FROM stdin;
-2	t	t	t	t
-\.
-
-
---
--- TOC entry 3593 (class 0 OID 0)
--- Dependencies: 216
--- Name: Log_Source_source_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public."Log_Source_source_id_seq"', 1241948, true);
-
-
---
--- TOC entry 3594 (class 0 OID 0)
--- Dependencies: 233
--- Name: alert_occurrences_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.alert_occurrences_id_seq', 59610, true);
-
-
---
--- TOC entry 3595 (class 0 OID 0)
--- Dependencies: 218
--- Name: alerts_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.alerts_id_seq', 54713, true);
-
-
---
--- TOC entry 3596 (class 0 OID 0)
--- Dependencies: 220
--- Name: calendar_data_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.calendar_data_id_seq', 1241951, true);
-
-
---
--- TOC entry 3597 (class 0 OID 0)
--- Dependencies: 222
--- Name: device_device_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.device_device_id_seq', 1241946, true);
-
-
---
--- TOC entry 3598 (class 0 OID 0)
--- Dependencies: 224
--- Name: login_user_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.login_user_id_seq', 5, true);
-
-
---
--- TOC entry 3599 (class 0 OID 0)
--- Dependencies: 227
--- Name: message_message_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.message_message_id_seq', 1241736, true);
-
-
---
--- TOC entry 3600 (class 0 OID 0)
--- Dependencies: 229
--- Name: process_process_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.process_process_id_seq', 1241736, true);
-
-
---
--- TOC entry 3601 (class 0 OID 0)
--- Dependencies: 236
--- Name: special_messages_msg_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.special_messages_msg_id_seq', 12, true);
-
-
---
--- TOC entry 3602 (class 0 OID 0)
--- Dependencies: 235
--- Name: use_cases_case_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.use_cases_case_id_seq', 5, true);
-
-
---
--- TOC entry 3367 (class 2606 OID 16471)
 -- Name: Log_Source Log_Source_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -776,7 +861,6 @@ ALTER TABLE ONLY public."Log_Source"
 
 
 --
--- TOC entry 3401 (class 2606 OID 16553)
 -- Name: alert_occurrences alert_occurrences_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -785,7 +869,6 @@ ALTER TABLE ONLY public.alert_occurrences
 
 
 --
--- TOC entry 3370 (class 2606 OID 16473)
 -- Name: alerts alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -794,7 +877,62 @@ ALTER TABLE ONLY public.alerts
 
 
 --
--- TOC entry 3372 (class 2606 OID 16475)
+-- Name: archive_audit_log archive_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_audit_log
+    ADD CONSTRAINT archive_audit_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: archive_manifest archive_manifest_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_manifest
+    ADD CONSTRAINT archive_manifest_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: archive_policy archive_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_policy
+    ADD CONSTRAINT archive_policy_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: archive_rehydration archive_rehydration_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_rehydration
+    ADD CONSTRAINT archive_rehydration_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: archive_schema_registry archive_schema_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_schema_registry
+    ADD CONSTRAINT archive_schema_registry_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: archive_storage_config archive_storage_config_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_storage_config
+    ADD CONSTRAINT archive_storage_config_name_key UNIQUE (name);
+
+
+--
+-- Name: archive_storage_config archive_storage_config_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_storage_config
+    ADD CONSTRAINT archive_storage_config_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: calendar calendar_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -803,7 +941,6 @@ ALTER TABLE ONLY public.calendar
 
 
 --
--- TOC entry 3376 (class 2606 OID 16477)
 -- Name: device device_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -812,7 +949,6 @@ ALTER TABLE ONLY public.device
 
 
 --
--- TOC entry 3379 (class 2606 OID 16479)
 -- Name: login login_email_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -821,7 +957,6 @@ ALTER TABLE ONLY public.login
 
 
 --
--- TOC entry 3381 (class 2606 OID 16481)
 -- Name: login login_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -830,7 +965,6 @@ ALTER TABLE ONLY public.login
 
 
 --
--- TOC entry 3383 (class 2606 OID 16483)
 -- Name: login login_username_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -839,7 +973,6 @@ ALTER TABLE ONLY public.login
 
 
 --
--- TOC entry 3391 (class 2606 OID 16485)
 -- Name: message message_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -848,7 +981,6 @@ ALTER TABLE ONLY public.message
 
 
 --
--- TOC entry 3393 (class 2606 OID 16487)
 -- Name: process process_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -857,7 +989,6 @@ ALTER TABLE ONLY public.process
 
 
 --
--- TOC entry 3395 (class 2606 OID 16489)
 -- Name: special_messages special_messages_pkey1; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -866,7 +997,6 @@ ALTER TABLE ONLY public.special_messages
 
 
 --
--- TOC entry 3385 (class 2606 OID 16491)
 -- Name: malicious_artifacts unique_artifact; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -875,7 +1005,6 @@ ALTER TABLE ONLY public.malicious_artifacts
 
 
 --
--- TOC entry 3397 (class 2606 OID 16493)
 -- Name: use_cases use_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -884,7 +1013,6 @@ ALTER TABLE ONLY public.use_cases
 
 
 --
--- TOC entry 3399 (class 2606 OID 16495)
 -- Name: user_permissions user_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -893,7 +1021,78 @@ ALTER TABLE ONLY public.user_permissions
 
 
 --
--- TOC entry 3402 (class 1259 OID 16564)
+-- Name: watcher_health watcher_health_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.watcher_health
+    ADD CONSTRAINT watcher_health_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: watcher_health_settings watcher_health_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.watcher_health_settings
+    ADD CONSTRAINT watcher_health_settings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: archive_audit_log_action; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX archive_audit_log_action ON public.archive_audit_log USING btree (action);
+
+
+--
+-- Name: archive_audit_log_occurred_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX archive_audit_log_occurred_at ON public.archive_audit_log USING btree (occurred_at DESC);
+
+
+--
+-- Name: archive_audit_log_partition_date; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX archive_audit_log_partition_date ON public.archive_audit_log USING btree (partition_date);
+
+
+--
+-- Name: archive_manifest_date; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX archive_manifest_date ON public.archive_manifest USING btree (partition_date DESC);
+
+
+--
+-- Name: archive_manifest_partition_table; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX archive_manifest_partition_table ON public.archive_manifest USING btree (partition_date, table_name);
+
+
+--
+-- Name: archive_manifest_state; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX archive_manifest_state ON public.archive_manifest USING btree (state);
+
+
+--
+-- Name: archive_rehydration_state; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX archive_rehydration_state ON public.archive_rehydration USING btree (state);
+
+
+--
+-- Name: archive_storage_config_active; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX archive_storage_config_active ON public.archive_storage_config USING btree (is_active) WHERE (is_active = true);
+
+
+--
 -- Name: idx_alert_occurrences_alert_id_fk; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -901,7 +1100,20 @@ CREATE INDEX idx_alert_occurrences_alert_id_fk ON public.alert_occurrences USING
 
 
 --
--- TOC entry 3373 (class 1259 OID 16496)
+-- Name: idx_alert_occurrences_fk_msg_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_alert_occurrences_fk_msg_id ON public.alert_occurrences USING btree (fk_msg_id);
+
+
+--
+-- Name: idx_alerts_fk_msg_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_alerts_fk_msg_id ON public.alerts USING btree (fk_msg_id);
+
+
+--
 -- Name: idx_calendar_data_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -909,7 +1121,6 @@ CREATE INDEX idx_calendar_data_id ON public.calendar USING btree (data_id);
 
 
 --
--- TOC entry 3374 (class 1259 OID 16497)
 -- Name: idx_calendar_data_time; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -917,7 +1128,20 @@ CREATE INDEX idx_calendar_data_time ON public.calendar USING btree (data_id, "ti
 
 
 --
--- TOC entry 3377 (class 1259 OID 16498)
+-- Name: idx_calendar_date; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_calendar_date ON public.calendar USING btree (date);
+
+
+--
+-- Name: idx_calendar_datetime_expr; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_calendar_datetime_expr ON public.calendar USING btree (((date + "time")));
+
+
+--
 -- Name: idx_device_device_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -925,7 +1149,6 @@ CREATE INDEX idx_device_device_id ON public.device USING btree (device_id);
 
 
 --
--- TOC entry 3368 (class 1259 OID 16499)
 -- Name: idx_log_source_source_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -933,7 +1156,6 @@ CREATE INDEX idx_log_source_source_id ON public."Log_Source" USING btree (source
 
 
 --
--- TOC entry 3386 (class 1259 OID 16500)
 -- Name: idx_message_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -941,7 +1163,6 @@ CREATE INDEX idx_message_date ON public.message USING btree (date);
 
 
 --
--- TOC entry 3387 (class 1259 OID 16501)
 -- Name: idx_message_device_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -949,7 +1170,6 @@ CREATE INDEX idx_message_device_id ON public.message USING btree (device_id);
 
 
 --
--- TOC entry 3388 (class 1259 OID 16502)
 -- Name: idx_message_log_source; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -957,7 +1177,6 @@ CREATE INDEX idx_message_log_source ON public.message USING btree (log_source);
 
 
 --
--- TOC entry 3389 (class 1259 OID 16503)
 -- Name: idx_message_message_search; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -965,7 +1184,27 @@ CREATE INDEX idx_message_message_search ON public.message USING gin (to_tsvector
 
 
 --
--- TOC entry 3411 (class 2606 OID 16554)
+-- Name: idx_message_message_trgm; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_message_message_trgm ON public.message USING gin (message public.gin_trgm_ops);
+
+
+--
+-- Name: watcher_health_is_online; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX watcher_health_is_online ON public.watcher_health USING btree (is_online);
+
+
+--
+-- Name: watcher_health_source_ip; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX watcher_health_source_ip ON public.watcher_health USING btree (source_ip);
+
+
+--
 -- Name: alert_occurrences alert_occurrences_alert_id_fk_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -974,7 +1213,6 @@ ALTER TABLE ONLY public.alert_occurrences
 
 
 --
--- TOC entry 3412 (class 2606 OID 16559)
 -- Name: alert_occurrences alert_occurrences_fk_msg_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -983,7 +1221,14 @@ ALTER TABLE ONLY public.alert_occurrences
 
 
 --
--- TOC entry 3409 (class 2606 OID 16504)
+-- Name: archive_audit_log archive_audit_log_manifest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.archive_audit_log
+    ADD CONSTRAINT archive_audit_log_manifest_id_fkey FOREIGN KEY (manifest_id) REFERENCES public.archive_manifest(id) ON DELETE SET NULL;
+
+
+--
 -- Name: special_messages caseid; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -992,7 +1237,6 @@ ALTER TABLE ONLY public.special_messages
 
 
 --
--- TOC entry 3403 (class 2606 OID 16509)
 -- Name: alerts fk_message; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1001,7 +1245,6 @@ ALTER TABLE ONLY public.alerts
 
 
 --
--- TOC entry 3404 (class 2606 OID 16514)
 -- Name: message message_date_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1010,7 +1253,6 @@ ALTER TABLE ONLY public.message
 
 
 --
--- TOC entry 3405 (class 2606 OID 16519)
 -- Name: message message_device_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1019,7 +1261,6 @@ ALTER TABLE ONLY public.message
 
 
 --
--- TOC entry 3406 (class 2606 OID 16524)
 -- Name: message message_log_source_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1028,7 +1269,6 @@ ALTER TABLE ONLY public.message
 
 
 --
--- TOC entry 3407 (class 2606 OID 16529)
 -- Name: message message_message_source_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1037,7 +1277,6 @@ ALTER TABLE ONLY public.message
 
 
 --
--- TOC entry 3408 (class 2606 OID 16534)
 -- Name: message message_process_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1046,7 +1285,6 @@ ALTER TABLE ONLY public.message
 
 
 --
--- TOC entry 3410 (class 2606 OID 16539)
 -- Name: user_permissions user_permissions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1054,11 +1292,9 @@ ALTER TABLE ONLY public.user_permissions
     ADD CONSTRAINT user_permissions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.login(user_id) ON DELETE CASCADE;
 
 
--- Completed on 2026-04-02 23:08:53 PKT
-
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict VxJULGwf5NnqfPzgCSHxW1Q4nM8F45gxnAWJ0flf9FkmhtaHBbFgoceVHYhF69U
+\unrestrict TjS7Z9fh9rZmCNc6d5VSlespCRhwQfdzQMFaadM4pHNYPvW0oJaW4ci6NTwI3Lo
 
