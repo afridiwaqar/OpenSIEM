@@ -1,3 +1,125 @@
-Windows Support
-Secure Log communication
-Log archival and rotation
+===================== Done =========================================
+
+Windows support (partially done)
+
+Windows watcher agent is built — needs production testing across Windows 7, 10, 11, Server 2019, 2022
+Windows-specific correlation rules (brute force on 4625, lateral movement on 4648, privilege escalation on 4672)
+Windows-specific artifact seeds matching Event ID patterns
+
+-------------------------------------------------------------------
+
+========================== In Progress ============================
+
+
+Correlation engine improvements
+
+Time-window enforcement — the time_window_seconds parameter exists in the code but is not actually enforced. A 5-step rule should only fire if all steps arrive within the configured window, not just if they all appear eventually
+Entity-field grouping by username — rules like "same user failed on server A then succeeded on server B" require grouping by user not just IP. The entity_field column exists in use_cases but the engine always groups by IP
+Threshold-based rules — "if the same IP triggers more than N hits in M seconds" without requiring a specific sequence. Currently requires a workaround
+Rule hit cooldown — prevent the same rule from firing repeatedly within a configurable window
+True sequence ordering enforcement — the order flag does a lenient presence check, not a real timestamp-ordered sequence check
+Correlation across multiple source IPs for detecting distributed attacks
+
+-----------------------------------------------------------------
+
+=========================== TO DO ================================
+
+Log collection
+
+Agent health alerting — raise an alarm when a watcher stops sending heartbeats for more than N minutes. Currently a silent watcher is only visible on the Clients page
+Log rotation handling — if a log file is rotated while the watcher is running, the offset tracking can miss lines or re-read them
+UDP reliability improvements — the UDP path has no acknowledgement or retry
+
+Parser gaps
+
+Zeek/Bro network IDS (conn.log, dns.log, http.log, ssl.log)
+Suricata/Snort IDS alerts
+AWS CloudTrail
+Windows Sysmon (XML format — extremely rich telemetry)
+Palo Alto, Fortinet, Cisco ASA dedicated parsers (syslog parser handles these partially)
+Version 2 — Features discussed but not yet built
+
+Alert management
+
+Alert escalation workflow — assign an alert to a specific analyst, set a status (open / investigating / resolved), add timestamped notes
+Alert suppression rules — suppress alerts matching a pattern for N hours during planned maintenance
+Email alerts fully working — SMTP is wired but email sends are failing in production
+
+Search and filtering
+
+Advanced search on the Logs page — proper filters for IP, hostname, action, severity, date range, logical operators (AND/OR/NOT). Currently just a string match across the whole database
+Saved searches — bookmark frequently used queries
+
+Reporting
+
+Scheduled PDF reports — automatically generate and email a weekly report
+Custom date range in reports — currently only preset periods
+MTTA trending chart — show how mean time to acknowledge is changing over time
+Compliance report templates mapped to ISO 27001, SOC 2, NIST CSF
+
+User management
+
+Two-factor authentication (TOTP)
+Per-user dashboard customisation — choose which widgets appear and their order
+Full audit log for user actions across the platform — not just archive operations
+
+Dashboard
+
+Mobile-responsive layout — current grid breaks below 768px
+Dark/light theme toggle
+More widget types — top talkers, geographic IP map, events per parser
+Version 2 — Infrastructure
+
+Installer
+
+Single install.sh that sets up PostgreSQL, creates the schema, installs Python dependencies, configures Apache/Nginx, creates systemd units, generates TLS certs, and seeds the database. Currently all steps are manual.
+
+systemd service files
+
+Proper unit files for opensiem.py, spector_state_observer.py, and malicious_keywords_updater.py with restart policies, logging to journald, and automatic startup on boot
+
+PostgreSQL connection pooling
+
+Every PHP request opens and closes its own connection. PgBouncer in front of PostgreSQL would handle load much better at scale
+
+Log archival integration (partially done)
+
+Archive search needs the date-picker UI instead of the browser prompt() for Run Archive Now
+Rehydration needs more testing on large date ranges
+Archive search page needs the DuckDB CLI confirmed working end-to-end on the server
+Version 3 — Longer horizon
+
+Threat intelligence
+
+STIX/TAXII feed support — standard threat intelligence exchange format
+IP reputation lookup on alert — when an alert fires from an external IP, automatically query AbuseIPDB or VirusTotal and attach the result to the alert
+IOC expiry and review workflow — mark artifacts as review pending after a configurable age
+
+Scale and reliability
+
+Multi-node support — secondary node for the correlation engine and a shared DB for basic HA
+PostgreSQL log archival to cold storage — messages older than 90 days moved to a compressed archive table keeping the main Message table fast (archive system now handles this)
+TLS mutual authentication — client certificates on watchers so the server can verify which agent is connecting
+
+CI/CD (partially documented)
+
+Full GitHub Actions pipeline as designed in the DevOps guide
+Docker packaging for those who want containerised deployment
+Automated integration tests against a real PostgreSQL instance
+
+Compliance and legal
+
+Legal hold interface improvements — bulk freeze, freeze expiry dates, freeze audit trail
+Compliance report export in formats required by specific frameworks
+
+IOC management
+
+Automatic feed health monitoring — alert if a configured IOC feed URL returns an error or hasn't updated in 48 hours
+Multi-backend archive replication — write to local path AND S3 simultaneously for redundancy
+Quick wins — things that are small but currently broken or missing
+Remove the diagnostic console.log lines still in app.js
+HTML pages (alerts.html, artifacts.html, correlation.html) still need the per-page dropdown and pagination button elements adding — the JS is ready and waiting
+The perPage dropdown on alerts page needs the unread_first sort parameter confirmed working end-to-end with list.php
+alarm_system.py was never shared — it is a black box. If artifact alerts behave unexpectedly it is the first place to look
+parse_odoo.py needs deploying and testing against a real Odoo instance
+watcher_windows.py needs testing by a non-developer running it as a Windows service via NSSM

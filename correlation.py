@@ -1,26 +1,73 @@
 #!/usr/bin/env python3
+# OpenSIEM - GPL-3.0 Licensed
+# Copyright (c) 2024-present
+# See LICENSE for details.
+#
+# Correlation Engine v2
+# Improvements over v1:
+#   1. Time-window enforcement   — steps must occur within configured window
+#   2. Entity-field grouping     — group by IP or username per rule
+#   3. True sequence ordering    — timestamps must be in correct order
+#   4. Rule hit cooldown         — prevent alert storms after a rule fires
+#   5. Threshold-based rules     — fire on count >= N within M seconds
+#   6. Multi-IP / global bucket  — detect distributed attacks across IPs
+
+import json
+import logging
+import re
+import string
+import threading
+from collections import defaultdict
+from datetime import datetime, timedelta
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 import psycopg2
 import configparser
-from collections import defaultdict
-from datetime import datetime
-import re
+
 from alarm_system import alarm_system
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import json
-import string
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] correlation: %(message)s'
+)
+log = logging.getLogger('correlation')
 
 config = configparser.ConfigParser()
 config.read('/etc/opensiem/opensiem.conf')
 db_config = config['database']
 
-log_storage = defaultdict(lambda: defaultdict(lambda: {'count': 0, 'last_seen': None}))
+# =============================================================================
+# In-memory state
+# =============================================================================
 
-recent_raw = defaultdict(dict)
-recent_ids = defaultdict(dict)
+# log_storage[entity_key][msg_id] = {
+#     'timestamps': [datetime, ...],   # one entry per occurrence
+#     'raw_lines':  [str, ...],
+#     'fk_ids':     [int|None, ...]
+# }
+log_storage: dict = defaultdict(lambda: defaultdict(lambda: {
+    'timestamps': [],
+    'raw_lines':  [],
+    'fk_ids':     []
+}))
 
-use_cases = {}
+# cooldown_tracker[(entity_key, case_id)] = datetime when rule last fired
+cooldown_tracker: dict = {}
+
+# Global bucket for multi-IP / distributed rules (entity_field = 'global')
+# Keyed as log_storage but under a single '__global__' entity key
+GLOBAL_KEY = '__global__'
+
+use_cases         = {}
 correlation_rules = defaultdict(list)
+
+_storage_lock   = threading.Lock()
+_cooldown_lock  = threading.Lock()
+
+
+# =============================================================================
+# DB helpers
+# =============================================================================
 
 def establish_connection():
     return psycopg2.connect(
@@ -32,30 +79,41 @@ def establish_connection():
 
 
 def load_data():
-
     global use_cases, correlation_rules
+
+    log.info("Loading correlation rules from database")
     print(f"\n{'='*80}")
-    correlation_rules.clear()
-    use_cases.clear()
+
+    with _storage_lock:
+        correlation_rules.clear()
+        use_cases.clear()
 
     conn = establish_connection()
-    cur = conn.cursor()
+    cur  = conn.cursor()
 
-    cur.execute("SELECT case_id, case_name, entity_field FROM use_cases")
+    cur.execute(
+        """SELECT case_id, case_name, entity_field, severity,
+                  time_window_seconds, cooldown_seconds,
+                  threshold_count, threshold_window_seconds
+             FROM use_cases"""
+    )
     for row in cur.fetchall():
-        case_id, case_name, entity_field = row[0], row[1], (row[2] or 'ip').lower()
-        if entity_field not in ('ip', 'user'):
-            entity_field = 'ip'
-        use_cases[case_id] = {'name': case_name, 'entity_field': entity_field,
-                              'severity': 'high'}
+        (case_id, case_name, entity_field, severity,
+         time_window, cooldown, threshold_count, threshold_window) = row
 
-    try:
-        cur.execute("SELECT case_id, severity FROM use_cases WHERE severity IS NOT NULL")
-        for case_id, sev in cur.fetchall():
-            if case_id in use_cases and sev:
-                use_cases[case_id]['severity'] = sev
-    except Exception:
-        pass
+        entity_field = (entity_field or 'ip').lower()
+        if entity_field not in ('ip', 'user', 'global'):
+            entity_field = 'ip'
+
+        use_cases[case_id] = {
+            'name':                     case_name,
+            'entity_field':             entity_field,
+            'severity':                 severity or 'high',
+            'time_window_seconds':      int(time_window  or 300),
+            'cooldown_seconds':         int(cooldown     or 600),
+            'threshold_count':          int(threshold_count)   if threshold_count   else None,
+            'threshold_window_seconds': int(threshold_window)  if threshold_window  else None,
+        }
 
     cur.execute(
         '''SELECT case_id_fk, msg_id, message, can_repeat, "order"
@@ -67,36 +125,37 @@ def load_data():
 
     for case_id, msg_id, message, can_repeat, order_flag in rows:
         correlation_rules[case_id].append({
-            'msg_id': msg_id,
-            'message': message,
+            'msg_id':     msg_id,
+            'message':    message,
             'can_repeat': bool(can_repeat),
-            'order': bool(order_flag)
+            'order':      bool(order_flag)
         })
-        print(f"📌 case_id={case_id}  msg_id={msg_id}  pattern={repr(str(message)[:60])}  "
-              f"can_repeat={can_repeat}  order={order_flag}")
 
     cur.close()
     conn.close()
 
-    total_rules = sum(len(v) for v in correlation_rules.values())
-    print(f"Loaded {len(use_cases)} use_cases, {total_rules} rules")
+    total = sum(len(v) for v in correlation_rules.values())
+    print(f"Loaded {len(use_cases)} use_cases, {total} rules")
     print(f"{'='*80}\n")
+    log.info(f"Loaded {len(use_cases)} use_cases, {total} patterns")
 
 
 def ensure_loaded():
     if not correlation_rules:
         try:
             load_data()
-            print("[AUTO-LOAD] use_cases=", len(use_cases),
-                  " rules=", sum(len(v) for v in correlation_rules.values()))
         except Exception as e:
-            print("[AUTO-LOAD] load_data failed:", e)
+            log.error(f"ensure_loaded: load_data failed: {e}")
+
+
+# =============================================================================
+# Text normalisation
+# =============================================================================
 
 _ws_re = re.compile(r'\s+')
 
 
 def _normalize(s: str) -> str:
-
     if s is None:
         return ''
     s = str(s).strip().lower()
@@ -119,239 +178,342 @@ def _to_msg_text(message) -> str:
             return str(message)
     return str(message)
 
-def store_for_key(entity_key, message_id, timestamp=None, count=1, raw_line=None, msg_id_fk=None):
 
+def _extract_entity_key(log_obj: dict, entity_field: str, source_ip: str) -> str:
+    if entity_field == 'global':
+        return GLOBAL_KEY
+    if entity_field == 'user':
+        user = (log_obj.get('user') or log_obj.get('username') or
+                log_obj.get('User') or '').strip()
+        if user and user not in ('N/A', '-', ''):
+            return f"user:{user}"
+    return source_ip or 'unknown-ip'
+
+
+# =============================================================================
+# Storage
+# =============================================================================
+
+def store_for_key(entity_key: str, message_id, timestamp=None,
+                  raw_line: str = None, msg_id_fk=None):
     timestamp = timestamp or datetime.now()
     try:
         mid = int(message_id)
     except (ValueError, TypeError):
-        print(f"Invalid message ID: {message_id}")
+        log.warning(f"Invalid message ID: {message_id}")
         return
 
-    bucket = log_storage[entity_key]
-    if mid in bucket:
-        bucket[mid]['count'] += count
-    else:
-        bucket[mid] = {'count': count, 'last_seen': timestamp}
-    bucket[mid]['last_seen'] = timestamp
+    with _storage_lock:
+        bucket = log_storage[entity_key][mid]
+        bucket['timestamps'].append(timestamp)
+        bucket['raw_lines'].append(str(raw_line or ''))
+        bucket['fk_ids'].append(msg_id_fk)
 
-    if raw_line:
-        recent_raw[entity_key][mid] = str(raw_line)
-    if msg_id_fk is not None:
-        try:
-            recent_ids[entity_key][mid] = int(msg_id_fk)
-        except Exception:
-            recent_ids[entity_key][mid] = None
+    log.debug(f"Stored entity={entity_key} msg_id={mid} "
+              f"total_occurrences={len(log_storage[entity_key][mid]['timestamps'])}")
 
-    print(f"DEBUG: Stored ip={entity_key} msg_id={mid} count={bucket[mid]['count']} last_seen={bucket[mid]['last_seen']}")
 
-def raise_correlation_alarm(case_name, entity_key=None, severity='high', details=None, fk_msg_id=None):
+def _prune_old_entries(entity_key: str, window_seconds: int, now: datetime):
+    cutoff = now - timedelta(seconds=window_seconds)
+    bucket = log_storage.get(entity_key, {})
+    for mid, data in list(bucket.items()):
+        keep = [(ts, rl, fk)
+                for ts, rl, fk in zip(data['timestamps'], data['raw_lines'], data['fk_ids'])
+                if ts >= cutoff]
+        if keep:
+            data['timestamps'], data['raw_lines'], data['fk_ids'] = map(list, zip(*keep))
+        else:
+            data['timestamps'].clear()
+            data['raw_lines'].clear()
+            data['fk_ids'].clear()
 
+
+# =============================================================================
+# Pattern matching
+# =============================================================================
+
+def check_message_match(log_obj: dict, source_ip: str = None) -> list:
+    log_text = _to_msg_text(log_obj)
+    if not log_text.strip():
+        return []
+
+    log_norm = _normalize(log_text)
+    matches  = []
+
+    log.debug(f"Matching: {repr(log_norm[:120])}")
+
+    for case_id, rules in correlation_rules.items():
+        uc           = use_cases.get(case_id, {})
+        entity_field = uc.get('entity_field', 'ip')
+        case_name    = uc.get('name', f'CASE_{case_id}')
+        entity_key   = _extract_entity_key(log_obj, entity_field, source_ip)
+
+        for rule in rules:
+            needle = _normalize(str(rule['message']))
+            if not needle:
+                continue
+            if needle in log_norm:
+                log.debug(f"HIT case={case_name} msg_id={rule['msg_id']} entity={entity_key}")
+                matches.append({
+                    'use_case_id':   case_id,
+                    'use_case_name': case_name,
+                    'entity_field':  entity_field,
+                    'message_id':    rule['msg_id'],
+                    'entity_key':    entity_key
+                })
+
+    return matches
+
+
+# =============================================================================
+# Cooldown helpers
+# =============================================================================
+
+def _is_on_cooldown(entity_key: str, case_id: int, cooldown_seconds: int) -> bool:
+    if cooldown_seconds <= 0:
+        return False
+    key = (entity_key, case_id)
+    with _cooldown_lock:
+        last_fired = cooldown_tracker.get(key)
+        if last_fired is None:
+            return False
+        return (datetime.now() - last_fired).total_seconds() < cooldown_seconds
+
+
+def _set_cooldown(entity_key: str, case_id: int):
+    with _cooldown_lock:
+        cooldown_tracker[(entity_key, case_id)] = datetime.now()
+
+
+# =============================================================================
+# Alarm
+# =============================================================================
+
+def raise_correlation_alarm(case_name, entity_key=None, severity='high',
+                            details=None, fk_msg_id=None):
     return alarm_system.raise_alarm(
         case_name=case_name,
-        source_ip=entity_key if entity_key else None,
+        source_ip=entity_key if entity_key and entity_key != GLOBAL_KEY else None,
         severity=severity,
         details=details,
         alert_type='correlation',
         fk_msg_id=fk_msg_id
     )
 
-def _artifact_candidate(rule_message) -> str:
-    if isinstance(rule_message, dict):
-        return _normalize(rule_message.get('raw_message') or '')
-    return _normalize(rule_message)
-
-
-def check_message_match(parsed_log, source_ip_hint=None):
-
-    matches = []
-
-    if isinstance(parsed_log, dict):
-        log_text = _to_msg_text(parsed_log)
-        src_ip = parsed_log.get('source_ip') or source_ip_hint
-    else:
-        log_text = _to_msg_text(parsed_log)
-        src_ip = source_ip_hint
-
-    if not log_text.strip():
-        print("[MATCH] ⚠ Empty log text after extraction → skipping")
-        return matches
-
-    log_norm = _normalize(log_text)
-    print(f"[MATCH] Raw text : {repr(log_text[:120])}")
-    print(f"[MATCH] Normalised: {repr(log_norm[:120])}")
-    print(f"[MATCH] Checking against {sum(len(v) for v in correlation_rules.values())} patterns "
-          f"across {len(correlation_rules)} cases")
-
-    for case_id, rules in correlation_rules.items():
-        uc = use_cases.get(case_id, {'name': f'CASE_{case_id}', 'entity_field': 'ip'})
-        case_name = uc['name']
-
-        for rule in rules:
-            needle = _artifact_candidate(rule['message'])
-            if not needle:
-                continue
-
-            hit = needle in log_norm
-            if hit:
-                entity_key = src_ip or 'unknown-ip'
-                print(f"[MATCH] ✔ HIT  needle={repr(needle)}  case={case_name}  "
-                      f"msg_id={rule['msg_id']}  ip={entity_key}")
-                matches.append({
-                    'use_case_id': case_id,
-                    'use_case_name': case_name,
-                    'entity_field': 'ip',
-                    'message_id': rule['msg_id'],
-                    'entity_key': entity_key
-                })
-            else:
-                print(f"[MATCH] ✖ MISS needle={repr(needle)}  case={case_name}  msg_id={rule['msg_id']}")
-
-    if not matches:
-        print("[MATCH] No matches for this log entry")
-    return matches
 
 def _insert_occurrence(alert_id, occurred_at, fk_msg_id, source_ip, raw_line):
     try:
         conn = establish_connection()
-        cur = conn.cursor()
-        details = json.dumps({"raw_line": raw_line}, ensure_ascii=False)
-        cur.execute("""
-            INSERT INTO alert_occurrences(alert_id_fk, occurred_at, fk_msg_id, source_ip, details)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (alert_id, occurred_at, fk_msg_id, source_ip, details))
+        cur  = conn.cursor()
+        cur.execute(
+            """INSERT INTO alert_occurrences
+               (alert_id_fk, occurred_at, fk_msg_id, source_ip, details)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (alert_id, occurred_at, fk_msg_id, source_ip,
+             json.dumps({"raw_line": raw_line}, ensure_ascii=False))
+        )
         conn.commit()
         cur.close()
         conn.close()
     except Exception as e:
-        print(f"[occurrence] insert error: {e}")
+        log.error(f"occurrence insert error: {e}")
 
 
-def _get_last_alert_id_like(case_name, source_ip):
-
+def _get_last_alert_id(case_name: str, source_ip: str):
     try:
         conn = establish_connection()
-        cur = conn.cursor()
+        cur  = conn.cursor()
         cur.execute(
-            """
-            SELECT id
-              FROM alerts
-             WHERE alert_type='correlation'
-               AND COALESCE(source_ip::text,'') = COALESCE(%s::text,'')
-               AND admin_note LIKE %s
-             ORDER BY id DESC
-             LIMIT 1
-            """,
+            """SELECT id FROM alerts
+                WHERE alert_type = 'correlation'
+                  AND COALESCE(source_ip::text,'') = COALESCE(%s::text,'')
+                  AND admin_note LIKE %s
+                ORDER BY id DESC LIMIT 1""",
             (source_ip, f'%\\"case_name\\":\\"{case_name}%')
         )
         row = cur.fetchone()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return row[0] if row else None
     except Exception as e:
-        print(f"[occurrence] fetch last id error: {e}")
+        log.error(f"fetch last alert id error: {e}")
         return None
 
-def evaluate_correlation(entity_key: str = None, time_window_seconds: int = 300):
 
+# =============================================================================
+# Core evaluation
+# =============================================================================
+
+def _check_threshold_rule(uc: dict, entity_key: str, now: datetime) -> bool:
+    threshold_count  = uc['threshold_count']
+    threshold_window = uc['threshold_window_seconds'] or uc['time_window_seconds']
+    cutoff = now - timedelta(seconds=threshold_window)
+
+    with _storage_lock:
+        bucket = log_storage.get(entity_key, {})
+        total_in_window = sum(
+            sum(1 for ts in data['timestamps'] if ts >= cutoff)
+            for data in bucket.values()
+        )
+
+    return total_in_window >= threshold_count
+
+
+def _check_sequence_rule(rules: list, uc: dict, entity_key: str,
+                         now: datetime) -> tuple[bool, list]:
+    window_seconds = uc['time_window_seconds']
+    order_required = any(r.get('order') for r in rules)
+    cutoff         = now - timedelta(seconds=window_seconds)
+
+    with _storage_lock:
+        bucket = log_storage.get(entity_key, {})
+
+        # Check every required step has at least one occurrence within the window
+        steps_in_window = {}
+        for rule in rules:
+            mid  = rule['msg_id']
+            data = bucket.get(mid)
+            if not data:
+                return False, []
+            recent_ts = [ts for ts in data['timestamps'] if ts >= cutoff]
+            if not recent_ts:
+                return False, []
+            steps_in_window[mid] = recent_ts
+
+    if not order_required:
+        return True, list(steps_in_window.keys())
+
+    # True sequence ordering — earliest occurrence of each step must be
+    # in ascending order matching the rule's msg_id order
+    ordered_mids = [r['msg_id'] for r in rules]
+    earliest     = {mid: min(steps_in_window[mid]) for mid in ordered_mids}
+
+    for i in range(len(ordered_mids) - 1):
+        if earliest[ordered_mids[i]] > earliest[ordered_mids[i + 1]]:
+            log.debug(f"Sequence order violation: step {ordered_mids[i]} "
+                      f"at {earliest[ordered_mids[i]]} is after "
+                      f"step {ordered_mids[i+1]} at {earliest[ordered_mids[i+1]]}")
+            return False, []
+
+    return True, ordered_mids
+
+
+def _fire_rule(case_id: int, uc: dict, entity_key: str,
+               rules: list, matched_mids: list):
+    case_name = uc['name']
+    severity  = uc.get('severity', 'high')
+
+    log.info(f"CORRELATION HIT: {case_name} entity={entity_key}")
+
+    result = raise_correlation_alarm(
+        f"{case_name} on {entity_key}",
+        entity_key=entity_key,
+        severity=severity,
+        details={
+            'case_name':    case_name,
+            'entity':       entity_key,
+            'entity_field': uc['entity_field'],
+            'sequence':     matched_mids
+        }
+    )
+
+    alert_id = None
+    if isinstance(result, dict):
+        alert_id = result.get('id')
+    if not alert_id:
+        ip = None if entity_key == GLOBAL_KEY else entity_key
+        alert_id = _get_last_alert_id(case_name, ip)
+
+    if alert_id:
+        with _storage_lock:
+            bucket = log_storage.get(entity_key, {})
+            for mid in matched_mids:
+                data = bucket.get(mid, {})
+                ts_list  = data.get('timestamps', [None])
+                rl_list  = data.get('raw_lines',  [''])
+                fk_list  = data.get('fk_ids',     [None])
+                ts  = ts_list[-1]  if ts_list  else None
+                rl  = rl_list[-1]  if rl_list  else ''
+                fkid = fk_list[-1] if fk_list  else None
+                _insert_occurrence(alert_id, ts, fkid, entity_key, rl)
+
+    _set_cooldown(entity_key, case_id)
+    _reset_bucket(entity_key, case_id, rules)
+
+
+def _reset_bucket(entity_key: str, case_id: int, rules: list):
+    with _storage_lock:
+        bucket = log_storage.get(entity_key, {})
+        for rule in rules:
+            mid = rule['msg_id']
+            if mid in bucket:
+                bucket[mid]['timestamps'].clear()
+                bucket[mid]['raw_lines'].clear()
+                bucket[mid]['fk_ids'].clear()
+    log.debug(f"Reset bucket for entity={entity_key} case_id={case_id}")
+
+
+def evaluate_correlation(entity_key: str = None, time_window_seconds: int = None):
     now = datetime.now()
-    print(f"\n{'='*80}")
-    print(f"🔍 EVALUATION START at {now}  source_ip={entity_key or 'ALL'}")
-    print(f"🔍 Active storage keys: {list(log_storage.keys())}")
-
-    matched = []
-
     keys_to_check = [entity_key] if entity_key else list(log_storage.keys())
+
     for key in keys_to_check:
-        if key not in log_storage:
-            print(f" Skipping {key} – no data")
+        with _storage_lock:
+            has_data = key in log_storage
+        if not has_data:
             continue
 
-        bucket = log_storage[key]
-        print(f" Checking source_ip={key}  msg_ids seen: {list(bucket.keys())}")
-
         for case_id, rules in correlation_rules.items():
-            uc = use_cases.get(case_id, {'name': f'CASE_{case_id}', 'entity_field': 'ip'})
-            case_name = uc['name']
-
-            expected_msg_ids = [r['msg_id'] for r in rules]
-            print(f" → Case {case_name} expects msg_ids: {expected_msg_ids}")
-
-            found_all = all(mid in bucket and bucket[mid]['count'] >= 1 for mid in expected_msg_ids)
-            if not found_all:
-                missing = [mid for mid in expected_msg_ids if mid not in bucket or bucket[mid]['count'] < 1]
-                print(f"   ✖ Not all found (missing: {missing})")
+            uc = use_cases.get(case_id)
+            if not uc:
                 continue
 
-            order_required = any(r.get('order') for r in rules)
-            order_ok = True
-            if order_required:
-                seen_ids = set(bucket.keys())
-                order_ok = all(mid in seen_ids for mid in expected_msg_ids)
-                print(f"   → Order check (lenient): {'OK' if order_ok else 'FAIL'}")
+            ef = uc['entity_field']
 
-            if found_all and order_ok:
-                print(f"\n{'!'*70}")
-                print(f"🚨 CORRELATION HIT: {case_name} on ip={key}")
+            # Entity field filter — only evaluate this key against rules
+            # that match its type
+            if ef == 'global' and key != GLOBAL_KEY:
+                continue
+            if ef != 'global' and key == GLOBAL_KEY:
+                continue
+            if ef == 'user' and not key.startswith('user:'):
+                continue
+            if ef == 'ip' and key.startswith('user:'):
+                continue
 
-                result = raise_correlation_alarm(
-                    f"{case_name} on {key}",
-                    entity_key=key,
-                    severity=uc.get('severity', 'high'),
-                    details={'case_name': case_name, 'entity': key, 'entity_field': uc['entity_field'], 'sequence': expected_msg_ids},
-                    fk_msg_id=None
-                )
-                print('[ALERT-ID result]', result)
+            cooldown_secs = uc.get('cooldown_seconds', 600)
+            if _is_on_cooldown(key, case_id, cooldown_secs):
+                log.debug(f"Skipping {uc['name']} for {key} — on cooldown")
+                continue
 
-                new_id = None
-                if isinstance(result, dict) and 'id' in result:
-                    new_id = result['id']
-                if not new_id:
-                    new_id = _get_last_alert_id_like(case_name, key)
+            # Prune stale entries before evaluation
+            window = uc['time_window_seconds']
+            _prune_old_entries(key, window, now)
 
-                if new_id:
-                    print('[WRITE-TRAIL] alert_id=', new_id, 'steps=', expected_msg_ids)
-                    for step_mid in expected_msg_ids:
-                        ts      = bucket[step_mid]['last_seen']
-                        rawline = recent_raw[key].get(step_mid, '')
-                        fkid    = recent_ids[key].get(step_mid)
-                        _insert_occurrence(new_id, ts, fkid, key, rawline)
-                else:
-                    print("[occurrence] could not determine alert id; trail not inserted")
+            # Threshold rule — count-based, no sequence required
+            if uc['threshold_count'] is not None:
+                if _check_threshold_rule(uc, key, now):
+                    log.info(f"Threshold rule hit: {uc['name']} entity={key}")
+                    _fire_rule(case_id, uc, key, rules,
+                               [r['msg_id'] for r in rules])
+                continue
 
-                matched.append((key, case_id))
+            # Sequence rule — all steps present within window
+            hit, matched_mids = _check_sequence_rule(rules, uc, key, now)
+            if hit:
+                _fire_rule(case_id, uc, key, rules, matched_mids)
 
-    if matched:
-        print(f"\nResetting storage for {len(matched)} matched case(s)")
-        for src_ip, case_id in matched:
-            for r in correlation_rules[case_id]:
-                mid = r['msg_id']
-                if src_ip in log_storage and mid in log_storage[src_ip]:
-                    log_storage[src_ip][mid]['count'] = 0
-                    print(f"  ↺ Reset count for ip={src_ip} msg_id={mid}")
-    else:
-        print("No correlations triggered → no reset")
 
-    print(f"🔍 EVALUATION END  matched {len(matched)} cases")
-    print(f"{'='*80}\n")
+# =============================================================================
+# Public entry point
+# =============================================================================
 
-def correlate(message_id, message=None, source_ip=None):
-
-    print(f"\n{'─'*60}")
-    print(f"[CORRELATE] called  message_id={repr(message_id)}  source_ip={source_ip}")
-    print(f"[CORRELATE] message type={type(message).__name__}  value={repr(str(message)[:120])}")
-
+def correlate(message_id, message=None, source_ip: str = None):
     ensure_loaded()
-    print(f"[CORRELATE] rules loaded: {len(correlation_rules)} cases, "
-          f"{sum(len(v) for v in correlation_rules.values())} patterns")
-
-    if isinstance(message_id, list):
-        message_id = message_id[0] if message_id else None
-    print(f"[CORRELATE] message_id after normalise={repr(message_id)}")
 
     msg_text = _to_msg_text(message)
-    print(f"[CORRELATE] msg_text={repr(msg_text[:120])}")
     if not msg_text.strip():
-        print("[CORRELATE] ⚠ Empty message text — skipping")
+        log.debug("Empty message text — skipping")
         return
 
     if isinstance(message, dict):
@@ -363,45 +525,38 @@ def correlate(message_id, message=None, source_ip=None):
         if source_ip:
             log_obj['source_ip'] = source_ip
 
-    print(f"[CORRELATE] log_obj keys={list(log_obj.keys())}  "
-          f"message excerpt={repr(str(log_obj.get('message',''))[:80])}")
-
-    try:
-        matched = check_message_match(log_obj, source_ip_hint=source_ip)
-    except Exception as e:
-        print(f"[CORRELATE] ⚠ check_message_match raised: {e}")
-        matched = []
-
-    print(f"[CORRELATE] check_message_match returned {len(matched)} match(es)")
-
     maybe_fk_id = None
     if isinstance(message, dict) and 'message_id' in message:
         try:
             maybe_fk_id = int(message['message_id'])
         except Exception:
-            maybe_fk_id = None
+            pass
 
-    entity_key = source_ip or 'unknown-ip'
-    print(f"[CORRELATE] entity_key={entity_key}  maybe_fk_id={maybe_fk_id}")
+    matched = check_message_match(log_obj, source_ip)
 
     if matched:
-        print(f"[CORRELATE] ✔ Storing {len(matched)} matched step(s)")
         for m in matched:
-            ek  = m['entity_key']
-            mid = m['message_id']
-            print(f"[CORRELATE]   → store_for_key(ek={ek}, mid={mid})")
-            store_for_key(ek, mid, raw_line=msg_text, msg_id_fk=maybe_fk_id)
-
+            store_for_key(
+                m['entity_key'], m['message_id'],
+                raw_line=msg_text, msg_id_fk=maybe_fk_id
+            )
+        evaluated_keys = set()
         for m in matched:
-            evaluate_correlation(m['entity_key'], time_window_seconds=300)
+            ek = m['entity_key']
+            if ek not in evaluated_keys:
+                evaluate_correlation(ek)
+                evaluated_keys.add(ek)
     else:
-        print(f"[CORRELATE] No pattern matched — trying fallback store with message_id={message_id}")
         if message_id is not None:
-            print(f"[CORRELATE] ✔ Fallback: store_for_key(ek={entity_key}, mid={message_id})")
-            store_for_key(entity_key, message_id, raw_line=msg_text, msg_id_fk=maybe_fk_id)
-            evaluate_correlation(entity_key, time_window_seconds=300)
-        else:
-            print("[CORRELATE] ✖ No pattern match AND no message_id fallback — message dropped")
+            entity_key = source_ip or 'unknown-ip'
+            store_for_key(entity_key, message_id,
+                          raw_line=msg_text, msg_id_fk=maybe_fk_id)
+            evaluate_correlation(entity_key)
+
+
+# =============================================================================
+# Reload HTTP server
+# =============================================================================
 
 class _AdminHandler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -411,7 +566,12 @@ class _AdminHandler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({'ok': True, 'message': 'Correlation rules reloaded'}).encode())
+                self.wfile.write(json.dumps({
+                    'ok': True,
+                    'message': 'Correlation rules reloaded',
+                    'use_cases': len(use_cases),
+                    'patterns': sum(len(v) for v in correlation_rules.values())
+                }).encode())
             except Exception as e:
                 self.send_response(500)
                 self.send_header('Content-Type', 'application/json')
@@ -429,7 +589,12 @@ def _start_admin_server():
     srv = HTTPServer(('127.0.0.1', 51808), _AdminHandler)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
-    print("🛠 Admin server listening at http://127.0.0.1:51808 (POST /reload)")
+    log.info("Admin server listening at http://127.0.0.1:51808 (POST /reload)")
+
+
+# =============================================================================
+# Init
+# =============================================================================
 
 try:
     load_data()
