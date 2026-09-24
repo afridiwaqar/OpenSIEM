@@ -179,14 +179,26 @@ def _to_msg_text(message) -> str:
     return str(message)
 
 
+_USER_RE = re.compile(r'(?:^|\s)user[=:]([^\s,;]+)', re.IGNORECASE)
+
+
 def _extract_entity_key(log_obj: dict, entity_field: str, source_ip: str) -> str:
     if entity_field == 'global':
         return GLOBAL_KEY
     if entity_field == 'user':
+        # Try structured fields first
         user = (log_obj.get('user') or log_obj.get('username') or
                 log_obj.get('User') or '').strip()
+        # Fall back to parsing user=X from the message text
+        if not user or user in ('N/A', '-', ''):
+            msg_text = _to_msg_text(log_obj)
+            m = _USER_RE.search(msg_text)
+            if m:
+                user = m.group(1).strip()
         if user and user not in ('N/A', '-', ''):
             return f"user:{user}"
+        # No user found — fall back to IP so the event is not lost
+        return source_ip or 'unknown-ip'
     return source_ip or 'unknown-ip'
 
 
@@ -213,10 +225,20 @@ def store_for_key(entity_key: str, message_id, timestamp=None,
               f"total_occurrences={len(log_storage[entity_key][mid]['timestamps'])}")
 
 
-def _prune_old_entries(entity_key: str, window_seconds: int, now: datetime):
+def _prune_old_entries(entity_key: str, window_seconds: int, now: datetime,
+                       rule_msg_ids: list = None):
+    """Prune stale timestamps from the bucket for a specific entity.
+    Only prunes msg_ids that belong to the current rule (rule_msg_ids).
+    This prevents a short-window rule from evicting entries that belong
+    to a longer-window rule sharing the same entity key.
+    """
     cutoff = now - timedelta(seconds=window_seconds)
     bucket = log_storage.get(entity_key, {})
-    for mid, data in list(bucket.items()):
+    mids_to_prune = rule_msg_ids if rule_msg_ids else list(bucket.keys())
+    for mid in mids_to_prune:
+        data = bucket.get(mid)
+        if not data:
+            continue
         keep = [(ts, rl, fk)
                 for ts, rl, fk in zip(data['timestamps'], data['raw_lines'], data['fk_ids'])
                 if ts >= cutoff]
@@ -289,11 +311,23 @@ def _set_cooldown(entity_key: str, case_id: int):
 # Alarm
 # =============================================================================
 
+def _entity_to_ip(entity_key: str):
+    """Return entity_key as source_ip only if it looks like an IP address.
+    user:X and __global__ are not valid inet values."""
+    if not entity_key:
+        return None
+    if entity_key == GLOBAL_KEY:
+        return None
+    if entity_key.startswith('user:'):
+        return None
+    return entity_key
+
+
 def raise_correlation_alarm(case_name, entity_key=None, severity='high',
                             details=None, fk_msg_id=None):
     return alarm_system.raise_alarm(
         case_name=case_name,
-        source_ip=entity_key if entity_key and entity_key != GLOBAL_KEY else None,
+        source_ip=_entity_to_ip(entity_key),
         severity=severity,
         details=details,
         alert_type='correlation',
@@ -302,6 +336,8 @@ def raise_correlation_alarm(case_name, entity_key=None, severity='high',
 
 
 def _insert_occurrence(alert_id, occurred_at, fk_msg_id, source_ip, raw_line):
+    # source_ip must be a valid inet value — entity keys like user:X or __global__ are not
+    safe_ip = _entity_to_ip(source_ip) if source_ip else None
     try:
         conn = establish_connection()
         cur  = conn.cursor()
@@ -309,7 +345,7 @@ def _insert_occurrence(alert_id, occurred_at, fk_msg_id, source_ip, raw_line):
             """INSERT INTO alert_occurrences
                (alert_id_fk, occurred_at, fk_msg_id, source_ip, details)
                VALUES (%s, %s, %s, %s, %s)""",
-            (alert_id, occurred_at, fk_msg_id, source_ip,
+            (alert_id, occurred_at, fk_msg_id, safe_ip,
              json.dumps({"raw_line": raw_line}, ensure_ascii=False))
         )
         conn.commit()
@@ -344,16 +380,20 @@ def _get_last_alert_id(case_name: str, source_ip: str):
 # Core evaluation
 # =============================================================================
 
-def _check_threshold_rule(uc: dict, entity_key: str, now: datetime) -> bool:
+def _check_threshold_rule(uc: dict, entity_key: str, now: datetime,
+                          rule_msg_ids: list = None) -> bool:
     threshold_count  = uc['threshold_count']
     threshold_window = uc['threshold_window_seconds'] or uc['time_window_seconds']
     cutoff = now - timedelta(seconds=threshold_window)
 
     with _storage_lock:
         bucket = log_storage.get(entity_key, {})
+        # Only count msg_ids that belong to THIS rule, not the whole bucket
+        mids = rule_msg_ids if rule_msg_ids else list(bucket.keys())
         total_in_window = sum(
-            sum(1 for ts in data['timestamps'] if ts >= cutoff)
-            for data in bucket.values()
+            sum(1 for ts in bucket[mid]['timestamps'] if ts >= cutoff)
+            for mid in mids
+            if mid in bucket
         )
 
     return total_in_window >= threshold_count
@@ -486,13 +526,16 @@ def evaluate_correlation(entity_key: str = None, time_window_seconds: int = None
                 log.debug(f"Skipping {uc['name']} for {key} — on cooldown")
                 continue
 
-            # Prune stale entries before evaluation
+            # Prune stale entries ONLY for this rule's msg_ids
+            # so a short-window rule doesn't evict entries belonging
+            # to a longer-window rule sharing the same entity key
             window = uc['time_window_seconds']
-            _prune_old_entries(key, window, now)
+            rule_mids = [r['msg_id'] for r in rules]
+            _prune_old_entries(key, window, now, rule_msg_ids=rule_mids)
 
             # Threshold rule — count-based, no sequence required
             if uc['threshold_count'] is not None:
-                if _check_threshold_rule(uc, key, now):
+                if _check_threshold_rule(uc, key, now, rule_msg_ids=rule_mids):
                     log.info(f"Threshold rule hit: {uc['name']} entity={key}")
                     _fire_rule(case_id, uc, key, rules,
                                [r['msg_id'] for r in rules])

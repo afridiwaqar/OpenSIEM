@@ -1,0 +1,98 @@
+# OpenSIEM Correlation Engine v2 — Future Rules Backlog
+
+Rules are grouped by the v2 feature they exploit.
+Existing rules (10–41) already benefit from v2 time-window and ordering enforcement.
+These new rules specifically use entity_field='user', threshold_count, or entity_field='global'.
+
+---
+
+## USER-BASED GROUPING (entity_field = 'user')
+
+These rules detect attacks that span multiple source IPs but target the same account.
+
+| ID  | Rule Name                                      | Steps                                             | Window  | Severity |
+|-----|------------------------------------------------|---------------------------------------------------|---------|----------|
+| 70  | Credential Reuse Across Servers                | Auth failure on host A → success on host B        | 10 min  | High     |
+| 71  | Account Enumeration to Takeover                | Multiple invalid user attempts → valid user login | 5 min   | High     |
+| 72  | Privilege Escalation after Lateral Movement    | Remote login → sudo/su success (same user)        | 15 min  | Critical |
+| 73  | Off-hours Login After Daytime Failure          | Failed login during business hours → success at night | 8 hr | High  |
+| 74  | VPN Login Followed by Internal Recon           | VPN authentication → internal host sweep          | 30 min  | High     |
+| 75  | Database Login After Web App Auth Failure      | Web app auth failure → direct DB login same user  | 10 min  | Critical |
+| 76  | Windows Admin Login After Linux Failure        | Linux SSH failure → Windows RDP success same user | 15 min  | Critical |
+| 77  | Service Account Used Interactively             | Service account login_failed → interactive logon  | 5 min   | High     |
+
+---
+
+## THRESHOLD-BASED (threshold_count)
+
+These rules fire on volume rather than sequence — N events within M seconds.
+
+| ID  | Rule Name                                      | Pattern                          | Count | Window | Severity |
+|-----|------------------------------------------------|----------------------------------|-------|--------|----------|
+| 50  | Port Scan — Fast                               | connection refused / rst         | 30    | 60s    | High     |
+| 51  | Port Scan — Slow (evasion attempt)             | connection refused / rst         | 50    | 600s   | Mid      |
+| 52  | HTTP Brute Force — Login Endpoint              | POST /login 401 / 403            | 20    | 60s    | High     |
+| 53  | DNS Amplification Attempt                      | large DNS response outbound      | 100   | 30s    | Critical |
+| 54  | SMTP Relay Abuse                               | NOQUEUE: reject                  | 50    | 60s    | High     |
+| 55  | SSH Brute Force — High Rate (threshold)        | failed password                  | 20    | 30s    | High     |
+| 56  | Web Scanner Detected                           | 404 / forbidden                  | 50    | 60s    | Mid      |
+| 57  | Windows Failed Logon Storm (4625)              | windows login_failed             | 15    | 60s    | High     |
+| 58  | Repeated Sudo Failures                         | sudo.*incorrect password         | 5     | 120s   | High     |
+| 59  | Database Query Flood                           | connection from.*postgres        | 100   | 30s    | Mid      |
+| 60  | ICMP Flood / Ping Sweep                        | icmp.*echo request               | 50    | 10s    | Mid      |
+
+---
+
+## GLOBAL / MULTI-IP DISTRIBUTED (entity_field = 'global')
+
+These rules detect coordinated attacks from multiple source IPs.
+
+| ID  | Rule Name                                      | Steps                                              | Window | Severity |
+|-----|------------------------------------------------|----------------------------------------------------|--------|----------|
+| 90  | Distributed Credential Stuffing                | N failed logins from different IPs → one success   | 10 min | Critical |
+| 91  | Botnet Command and Control Beacon              | Multiple IPs contact same rare external host       | 5 min  | Critical |
+| 92  | Distributed Web Application Attack             | SQL injection attempts from multiple IPs           | 5 min  | High     |
+| 93  | Coordinated Port Scan (multiple scanners)      | SYN packets to same port from 10+ different IPs   | 2 min  | High     |
+| 94  | DDoS Pre-cursor Detection                      | N connection floods from different IPs             | 60s    | Critical |
+| 95  | Multi-Source Log Tampering                     | Log clear / rotate events from multiple hosts      | 5 min  | Critical |
+| 96  | Distributed Ransomware Propagation             | Service install + file encryption from N hosts     | 15 min | Critical |
+
+---
+
+## CROSS-PLATFORM SEQUENCE (uses existing engine, new patterns)
+
+Rules that correlate events across Linux and Windows systems.
+
+| ID  | Rule Name                                        | Steps                                                 | Window | Severity |
+|-----|--------------------------------------------------|-------------------------------------------------------|--------|----------|
+| 42  | Linux Compromise Followed by Windows Lateral Move | SSH success on Linux → RDP/SMB attempt on Windows    | 30 min | Critical |
+| 43  | Web Shell Upload to Command Execution            | File upload (web log) → process spawn (system log)   | 5 min  | Critical |
+| 44  | Database Exfiltration Sequence                   | Auth failure → large SELECT → outbound connection    | 10 min | Critical |
+| 45  | Odoo ERP Compromise to Database Access           | Odoo auth failure → direct PostgreSQL connection     | 10 min | Critical |
+| 46  | Cron Persistence after SSH Login                 | SSH accepted → new cron entry added                  | 5 min  | High     |
+| 47  | Kernel Module Load after Privilege Escalation    | sudo success → insmod / modprobe                     | 2 min  | Critical |
+
+---
+
+## COMPLIANCE / AUDIT RULES
+
+Rules useful for SOC 2, ISO 27001, PCI DSS compliance monitoring.
+
+| ID  | Rule Name                                      | Steps                                           | Window | Severity |
+|-----|------------------------------------------------|-------------------------------------------------|--------|----------|
+| 100 | Admin Login Outside Business Hours             | Admin account login → timestamp outside 09–18  | —      | Mid      |
+| 101 | Configuration Change After Failed Login        | Auth failure → config file modification         | 30 min | High     |
+| 102 | User Created Then Immediately Granted Admin    | Account created → added to admin group          | 5 min  | Critical |
+| 103 | Sensitive File Access After Privilege Escalation | sudo/su → read of /etc/passwd /etc/shadow     | 2 min  | High     |
+| 104 | Backup Deletion After Login                    | Login → deletion of backup files                | 10 min | Critical |
+| 105 | Audit Log Cleared After Authentication         | Login → wevtutil cl / clear-eventlog            | 5 min  | Critical |
+
+---
+
+## PRIORITY ORDER FOR IMPLEMENTATION
+
+1. Rules 50, 52, 55, 57 — threshold brute force (immediate value, easy patterns)
+2. Rules 70, 71, 72 — user grouping (demonstrates key v2 differentiator)
+3. Rules 90, 92, 94 — global distributed (unique to OpenSIEM v2)
+4. Rules 42, 43, 44 — cross-platform sequences (showcases breadth)
+5. Rules 100–105 — compliance (adds enterprise positioning)

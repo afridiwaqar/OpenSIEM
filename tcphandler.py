@@ -44,7 +44,7 @@ def tcp_handle_client(conn, addr, module_dict):
             while b"\n" in buffer:
                 line, buffer = buffer.split(b"\n", 1)
                 msg = line.decode(FORMAT, errors="replace").strip()
-
+                logging.info(f"Log message --> {msg}")
                 if not msg:
                     continue
 

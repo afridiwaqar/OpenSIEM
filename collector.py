@@ -110,7 +110,6 @@ def malicious_artifacts_checker(curr, mal_msg):
 
 
 def get_message_id(curr, msg):
-    print("CHECKing Correlation for ...... --> ", msg)
     cur = curr.cursor()
 
     cur.execute("SELECT msg_id, message FROM special_messages;")
@@ -120,8 +119,6 @@ def get_message_id(curr, msg):
     msg_lower = msg.lower()
     for msg_id, pattern in rows:
         if pattern and pattern.lower() in msg_lower:
-            print("Message found at -----> ", msg_id, " pattern=", repr(str(pattern)[:60]))
             return msg_id
 
-    print("No message for correlation")
     return None

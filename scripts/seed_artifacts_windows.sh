@@ -26,7 +26,9 @@ DB_USER=$(awk -F'=' '/^\[database\]/,/^\[/ { if($1~/^user/)     print $2 }' "$CO
 DB_PASS=$(awk -F'=' '/^\[database\]/,/^\[/ { if($1~/^password/) print $2 }' "$CONF" | tr -d ' ' | head -1)
 
 export PGPASSWORD="${DB_PASS}"
-PSQL="psql -h $DB_HOST -p ${DB_PORT:-5432} -U $DB_USER -d $DB_NAME -v ON_ERROR_STOP=1"
+# PSQL="psql -h $DB_HOST -p ${DB_PORT:-5432} -U $DB_USER -d $DB_NAME -v ON_ERROR_STOP=1"
+PSQL="psql -h 127.0.0.1 -p 5432 -U opensiem -d museum -v ON_ERROR_STOP=1"
+
 
 GRN='\033[0;32m'; YLW='\033[1;33m'; NC='\033[0m'
 

@@ -1,0 +1,315 @@
+# OpenSIEM Correlation Engine v2 — Rule Writing Guide
+
+## Overview
+
+Correlation rules detect multi-step attack sequences by matching patterns across
+incoming log lines. When all required steps for a rule occur within the configured
+time window, the engine raises an alert in Chronicler.
+
+Rules live in two database tables:
+  - `use_cases`        — one row per rule (metadata, thresholds, windows)
+  - `special_messages` — one or more rows per rule (the patterns to match)
+
+---
+
+## Table Schemas
+
+### use_cases
+
+| Column                   | Type    | Description |
+|--------------------------|---------|-------------|
+| case_id                  | integer | Unique rule ID. Convention: Linux 10–29, Windows 30–49, Network 50–69, User/Identity 70–89, custom 100+ |
+| case_name                | varchar | Human-readable name shown in Chronicler alerts |
+| entity_field             | varchar | Grouping mode: `ip` `user` or `global` (see below) |
+| severity                 | varchar | `low` `mid` `high` or `critical` |
+| time_window_seconds      | integer | All steps must occur within this many seconds. Default 300 |
+| cooldown_seconds         | integer | After firing, suppress re-firing for this many seconds. Default 600 |
+| threshold_count          | integer | If set, fire when this many matching events accumulate (no sequence required) |
+| threshold_window_seconds | integer | Window for threshold counting. Falls back to time_window_seconds if NULL |
+
+### special_messages
+
+| Column      | Type    | Description |
+|-------------|---------|-------------|
+| msg_id      | integer | Unique pattern ID. Must not clash with other rules |
+| case_id_fk  | integer | Foreign key to use_cases.case_id |
+| message     | varchar | Substring to match against the log message field (case-insensitive) |
+| can_repeat  | boolean | Whether this step can match more than once before the rule fires |
+| order       | integer | 0 = unordered, 1/2/3... = must occur in this ascending order |
+
+---
+
+## Entity Field Modes
+
+### ip (default)
+Each source IP gets its own isolated bucket. A rule only fires if the same IP
+triggers all required steps. Best for: brute force, port scan, exploit attempts.
+
+```sql
+entity_field = 'ip'
+```
+
+### user
+Events are grouped by the username extracted from the log message. The engine
+looks for a structured `user` field from the parser first, then falls back to
+parsing `user=X` from the raw message text. This allows detecting attacks that
+span multiple source IPs — for example, stolen credentials used from different
+machines. Best for: credential reuse, lateral movement, insider threat.
+
+```sql
+entity_field = 'user'
+```
+
+To make user grouping work, include `user=<username>` in your log format, or
+use a parser that extracts a structured `user` field (SSH parser, Windows
+Event Log parser already do this).
+
+### global
+All events from all IPs share one bucket. Use when the attack is distributed
+across many sources and no single IP completes the sequence alone. Best for:
+DDoS, distributed credential stuffing, botnet coordination.
+
+```sql
+entity_field = 'global'
+```
+
+---
+
+## Rule Types
+
+### Type 1 — Sequence rule
+All steps must occur within the time window. Optionally enforced in order.
+
+```sql
+-- Step order: 0 = any order, 1/2/3 = must be in ascending order
+INSERT INTO special_messages (msg_id, case_id_fk, message, can_repeat, "order")
+VALUES
+  (101, 10, 'failed password',   true,  1),
+  (102, 10, 'accepted password', false, 2);
+```
+
+Use `can_repeat = true` for steps that may appear multiple times before the
+final step (e.g. many failed logins before one success).
+
+Use `"order" > 0` when the chronological sequence matters (step 1 must have
+an earlier timestamp than step 2). Use `"order" = 0` for unordered rules
+where only co-occurrence within the window matters.
+
+### Type 2 — Threshold rule
+Fires when N events accumulate within M seconds. No sequence required.
+Set `threshold_count` on the `use_cases` row.
+
+```sql
+UPDATE use_cases SET threshold_count = 20, threshold_window_seconds = 60
+WHERE case_id = 50;
+```
+
+Only one pattern row is typically needed for the triggering event.
+
+---
+
+## Step-by-step: Writing a new rule
+
+### Step 1 — Choose IDs
+
+Pick a `case_id` that doesn't conflict with existing rules:
+```sql
+SELECT MAX(case_id) FROM use_cases;
+```
+
+Pick `msg_id` values for each pattern step. Convention: case_id * 10 + step.
+For example case_id 50 → msg_ids 500, 501, 502.
+
+### Step 2 — Identify the log patterns
+
+Send a real attack or check existing logs to find what text appears in the
+message field. The engine matches substrings case-insensitively, so short
+distinctive phrases work best.
+
+```sql
+-- Check what parse_syslog returns for a real SSH log
+-- The engine matches against the 'message' field of the parsed dict
+```
+
+Good pattern: `'failed password for'`
+Avoid overly broad: `'failed'` (too many false positives)
+Avoid overly specific: `'failed password for root from 192.168.1.1'` (won't generalise)
+
+### Step 3 — Insert the use_case
+
+```sql
+INSERT INTO use_cases (
+    case_id, case_name, entity_field, severity,
+    time_window_seconds, cooldown_seconds
+) VALUES (
+    50,
+    'SSH Brute Force — High Rate',
+    'ip',
+    'high',
+    60,    -- all steps within 60 seconds
+    300    -- suppress re-alert for 5 minutes
+);
+```
+
+### Step 4 — Insert the patterns
+
+```sql
+INSERT INTO special_messages (msg_id, case_id_fk, message, can_repeat, "order")
+VALUES
+    (500, 50, 'failed password', true,  0),
+    (501, 50, 'invalid user',    true,  0),
+    (502, 50, 'accepted password', false, 0);
+```
+
+### Step 5 — Reload the engine
+
+No restart required:
+```bash
+curl -s -X POST http://127.0.0.1:51808/reload
+```
+
+Verify it loaded:
+```bash
+curl -s -X POST http://127.0.0.1:51808/reload | python3 -m json.tool
+# {"ok": true, "use_cases": N, "patterns": N}
+```
+
+---
+
+## Time Window Guidance
+
+| Attack Type              | Recommended Window |
+|--------------------------|--------------------|
+| Fast brute force         | 30–120 seconds     |
+| Slow/distributed brute   | 300–600 seconds    |
+| Multi-stage exploitation | 300–900 seconds    |
+| Insider threat sequences | 1800–3600 seconds  |
+| Threshold (port scan)    | 30–60 seconds      |
+| Threshold (slow scan)    | 300–600 seconds    |
+
+---
+
+## Cooldown Guidance
+
+Cooldown prevents alert storms during active attacks. A rule that fires
+continuously every few seconds produces noise that buries real findings.
+
+| Scenario                          | Recommended Cooldown |
+|-----------------------------------|----------------------|
+| Fast brute force (expect repeats) | 300–600 seconds      |
+| Exploitation (investigate once)   | 1800–3600 seconds    |
+| Port scan                         | 600 seconds          |
+| Insider threat                    | 3600 seconds         |
+
+---
+
+## Pattern Matching Tips
+
+1. The engine normalises text to lowercase and strips leading/trailing
+   punctuation before matching. Write patterns in lowercase.
+
+2. The match is substring-based. `'failed password'` matches any log line
+   containing that phrase anywhere.
+
+3. For Windows Event Log rules, include the event ID in the pattern since
+   parse_windows_evtlog.py formats lines as:
+   `windows login_failed [security:4625] user=X ...`
+   Pattern: `'windows login_failed [security:4625]'`
+
+4. For syslog rules, match against the message body text that the specific
+   parser extracts. Check what field values your parser returns:
+   ```bash
+   python3 -c "
+   import sys; sys.path.insert(0, '/opt/opensiem')
+   from modules import parse_syslog
+   result = parse_syslog.parse_log('your sample log line here')
+   print(result)
+   "
+   ```
+
+5. Avoid patterns that appear in normal operations. Test against a sample
+   of real logs before deploying:
+   ```sql
+   SELECT COUNT(*) FROM message
+   WHERE message::text LIKE '%your pattern here%';
+   ```
+
+---
+
+## Example: Complete Threshold Rule
+
+Detect port scanning — 30+ unique connection attempts from one IP in 60 seconds.
+
+```sql
+BEGIN;
+
+INSERT INTO use_cases (case_id, case_name, entity_field, severity,
+                       time_window_seconds, cooldown_seconds,
+                       threshold_count, threshold_window_seconds)
+VALUES (50, 'Port Scan Detected', 'ip', 'high', 300, 600, 30, 60);
+
+INSERT INTO special_messages (msg_id, case_id_fk, message, can_repeat, "order")
+VALUES (500, 50, 'connection refused', true, 0);
+
+COMMIT;
+```
+
+---
+
+## Example: Complete User-Grouped Rule
+
+Detect credential reuse across servers — same user fails on one server,
+succeeds on another within 10 minutes.
+
+```sql
+BEGIN;
+
+INSERT INTO use_cases (case_id, case_name, entity_field, severity,
+                       time_window_seconds, cooldown_seconds)
+VALUES (70, 'Credential Reuse Across Servers', 'user', 'high', 600, 1800);
+
+INSERT INTO special_messages (msg_id, case_id_fk, message, can_repeat, "order")
+VALUES
+    (700, 70, 'authentication failure', true,  0),
+    (701, 70, 'accepted publickey',     false, 0);
+
+COMMIT;
+
+-- Reload
+-- curl -s -X POST http://127.0.0.1:51808/reload
+```
+
+---
+
+## Troubleshooting
+
+**Rule loaded but not firing:**
+```bash
+# Check patterns are loaded
+curl -s -X POST http://127.0.0.1:51808/reload | python3 -m json.tool
+
+# Check pattern matches your log text
+python3 -c "
+import sys; sys.path.insert(0, '/opt/opensiem')
+import correlation
+correlation.load_data()
+from modules import parse_syslog
+result = parse_syslog.parse_log('your sample log line')
+matches = correlation.check_message_match(result, '1.2.3.4')
+print(matches)
+"
+```
+
+**Rule firing too often:**
+Increase `cooldown_seconds`.
+
+**Rule not completing sequence in time:**
+Increase `time_window_seconds`.
+
+**Rule firing on unrelated events:**
+Make the pattern more specific. Check what other log lines contain the pattern:
+```sql
+SELECT message FROM message
+WHERE message::text ILIKE '%your pattern%'
+ORDER BY message_id DESC LIMIT 20;
+```
