@@ -3,3 +3,7 @@ blackip.txt
 offsets.txt
 stats/socket_global.xml
 stats/socket_rates.xml
+.cache/
+.local/
+.directory
+__pycache__/
