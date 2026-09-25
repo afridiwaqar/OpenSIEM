@@ -2,14 +2,15 @@
 -- PostgreSQL database dump
 --
 
-\restrict TjS7Z9fh9rZmCNc6d5VSlespCRhwQfdzQMFaadM4pHNYPvW0oJaW4ci6NTwI3Lo
+\restrict 2yer7D96WavupkzXcTU09kU4I4DpLprwkqHdmhg1eRQo0fOniN9ekINWyFpoau4
 
--- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped from database version 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
+-- Dumped by pg_dump version 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -644,6 +645,10 @@ CREATE TABLE public.use_cases (
     case_name character varying NOT NULL,
     entity_field character varying(50) DEFAULT 'ip'::character varying,
     severity character varying(10) DEFAULT 'high'::character varying,
+    time_window_seconds integer DEFAULT 300,
+    cooldown_seconds integer DEFAULT 600,
+    threshold_count integer,
+    threshold_window_seconds integer,
     CONSTRAINT use_cases_severity_check CHECK (((severity)::text = ANY (ARRAY[('low'::character varying)::text, ('mid'::character varying)::text, ('high'::character varying)::text, ('critical'::character varying)::text])))
 );
 
@@ -850,6 +855,273 @@ ALTER TABLE ONLY public.use_cases ALTER COLUMN case_id SET DEFAULT nextval('publ
 --
 
 ALTER TABLE ONLY public.watcher_health ALTER COLUMN id SET DEFAULT nextval('public.watcher_health_id_seq'::regclass);
+
+
+--
+-- Data for Name: Log_Source; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public."Log_Source" (source_id, source_name, source_path) FROM stdin;
+\.
+
+
+--
+-- Data for Name: alert_occurrences; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.alert_occurrences (id, alert_id_fk, occurred_at, fk_msg_id, source_ip, details) FROM stdin;
+\.
+
+
+--
+-- Data for Name: alerts; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.alerts (id, alert_id, alert_type, severity, is_active, count, source_ip, acknowledged_time, admin_note, fk_msg_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: archive_audit_log; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.archive_audit_log (id, occurred_at, action, performed_by, user_id, partition_date, table_name, manifest_id, detail, ip_address, success, error_msg) FROM stdin;
+\.
+
+
+--
+-- Data for Name: archive_manifest; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.archive_manifest (id, partition_date, table_name, file_path, row_count, file_size_bytes, sha256_hash, compression, encrypted, state, frozen, frozen_by, frozen_reason, frozen_at, partial, rows_exported, rows_total, created_at, updated_at, verified_at, deleted_at, error_msg, backend_type, storage_config_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: archive_policy; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.archive_policy (id, enabled, hot_retention_days, cold_retention_days, run_time, compression, encrypt_at_rest, verify_after_export, delete_after_verify, partial_export_behaviour, storage_alert_threshold_gb, archive_messages, archive_alerts, archive_alert_occurrences, alerts_retention_days, updated_at, updated_by) FROM stdin;
+\.
+
+
+--
+-- Data for Name: archive_rehydration; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.archive_rehydration (id, date_from, date_to, tables, state, rows_imported, started_by, user_id, auto_release_at, created_at, completed_at, released_at, error_msg, pid, partitions_total, partitions_done) FROM stdin;
+\.
+
+
+--
+-- Data for Name: archive_schema_registry; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.archive_schema_registry (key, first_seen, last_seen, occurrence_count, promoted, data_type, example_value, source_parsers) FROM stdin;
+\.
+
+
+--
+-- Data for Name: archive_storage_config; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.archive_storage_config (id, name, backend_type, is_active, config_json, credentials_enc, last_tested_at, last_test_ok, last_test_msg, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: calendar; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.calendar (data_id, date, "time") FROM stdin;
+\.
+
+
+--
+-- Data for Name: device; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.device (device_id, device_type, device_name, device_ip, device_port) FROM stdin;
+\.
+
+
+--
+-- Data for Name: login; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.login (user_id, username, email, password_hash, role, is_active, is_verified, created_at, updated_at, last_login, failed_attempts, locked_until) FROM stdin;
+2	admin	admin@admin.com	$2b$12$5Yoj0ECPBuh9VnpWBVJqAu45tYS.ICOsPrT9MaKsreVCKDeLCSjJK	admin	t	t	2026-03-08 00:57:30.801045	2026-07-14 09:25:39.467861	\N	0	\N
+\.
+
+
+--
+-- Data for Name: malicious_artifacts; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.malicious_artifacts (artifacts, "interval", severity, added_at, source_url) FROM stdin;
+\.
+
+
+--
+-- Data for Name: message; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.message (message_id, message_source, date, message, log_source, device_id, process_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: process; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.process (process_id, process_name, pid) FROM stdin;
+\.
+
+
+--
+-- Data for Name: special_messages; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.special_messages (case_id_fk, msg_id, message, can_repeat, "order") FROM stdin;
+\.
+
+
+--
+-- Data for Name: use_cases; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.use_cases (case_id, case_name, entity_field, severity, time_window_seconds, cooldown_seconds, threshold_count, threshold_window_seconds) FROM stdin;
+\.
+
+
+--
+-- Data for Name: user_permissions; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.user_permissions (user_id, can_create, can_read, can_update, can_delete, archive_role) FROM stdin;
+2	t	t	t	t	administrator
+\.
+
+
+--
+-- Data for Name: watcher_health; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.watcher_health (id, client_name, source_ip, last_heartbeat_at, last_message_at, offline_threshold_minutes, is_online, marked_offline_at, alert_id_fk, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: watcher_health_settings; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.watcher_health_settings (id, default_offline_threshold_minutes, check_interval_seconds, enabled, updated_at) FROM stdin;
+\.
+
+
+--
+-- Name: Log_Source_source_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public."Log_Source_source_id_seq"', 659696888, true);
+
+
+--
+-- Name: alert_occurrences_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.alert_occurrences_id_seq', 60706, true);
+
+
+--
+-- Name: alerts_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.alerts_id_seq', 55608, true);
+
+
+--
+-- Name: archive_audit_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.archive_audit_log_id_seq', 159, true);
+
+
+--
+-- Name: archive_manifest_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.archive_manifest_id_seq', 32, true);
+
+
+--
+-- Name: archive_rehydration_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.archive_rehydration_id_seq', 12, true);
+
+
+--
+-- Name: archive_storage_config_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.archive_storage_config_id_seq', 20, true);
+
+
+--
+-- Name: calendar_data_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.calendar_data_id_seq', 659741607, true);
+
+
+--
+-- Name: device_device_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.device_device_id_seq', 659696153, true);
+
+
+--
+-- Name: login_user_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.login_user_id_seq', 5, true);
+
+
+--
+-- Name: message_message_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.message_message_id_seq', 717727463, true);
+
+
+--
+-- Name: process_process_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.process_process_id_seq', 659695704, true);
+
+
+--
+-- Name: special_messages_msg_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.special_messages_msg_id_seq', 15, true);
+
+
+--
+-- Name: use_cases_case_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.use_cases_case_id_seq', 6, true);
+
+
+--
+-- Name: watcher_health_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.watcher_health_id_seq', 333456334, true);
 
 
 --
@@ -1296,5 +1568,5 @@ ALTER TABLE ONLY public.user_permissions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict TjS7Z9fh9rZmCNc6d5VSlespCRhwQfdzQMFaadM4pHNYPvW0oJaW4ci6NTwI3Lo
+\unrestrict 2yer7D96WavupkzXcTU09kU4I4DpLprwkqHdmhg1eRQo0fOniN9ekINWyFpoau4
 
