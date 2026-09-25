@@ -11,7 +11,7 @@
 #   4. Rule hit cooldown         — prevent alert storms after a rule fires
 #   5. Threshold-based rules     — fire on count >= N within M seconds
 #   6. Multi-IP / global bucket  — detect distributed attacks across IPs
-
+#
 import json
 import logging
 import re
