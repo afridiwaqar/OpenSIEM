@@ -1,369 +1,356 @@
 // /var/www/chronicler/public/alerts.js
 (() => {
-  const $   = (id)  => document.getElementById(id);
-  const qsa = (sel, root=document) => Array.from(root.querySelectorAll(sel));
-
-  let csrf     = null;
-  let page     = 1;
-  let perPage  = 50;   // controlled by the per-page dropdown
-  let total    = 0;
-  let openAlertId = null;   // currently open modal alert id
-
-  // ── Boot ────────────────────────────────────────────────────────────────
-  (async function init() {
-    const me = await GET('/api/auth/me.php');
-    if (!me.ok) { location.href = '/login.html'; return; }
-    csrf = me.csrf;
-
-    setupBell();
-    setupModal();
-    setupBulk();
-
-    // Per-page dropdown (element added in alerts.html)
-    $('perPage')?.addEventListener('change', () => {
-      perPage = parseInt($('perPage').value, 10) || 50;
-      page = 1;
-      loadAlerts();
-    });
-
-    $('btnFilter').onclick = () => { page = 1; loadAlerts(); };
-    $('prevPage').onclick  = () => { if (page > 1)                 { page--; loadAlerts(); } };
-    $('nextPage').onclick  = () => { if (page * perPage < total)   { page++; loadAlerts(); } };
-
-    // If page was opened with ?id=N (from ribbon/bell link), open that alert
-    const params = new URLSearchParams(location.search);
-    const linkId = parseInt(params.get('id'), 10);
-
-    // If page was opened with ?severity=X (from dashboard severity widget), pre-filter
-    const linkSev = params.get('severity');
-    if (linkSev && $('fSeverity')) {
-      $('fSeverity').value = linkSev;
-    }
-
-    await loadAlerts();
-
-    if (linkId) openModal(linkId).catch(console.error);
-
-    setInterval(loadNotifications, 5000);
-  })();
+  const $   = id => document.getElementById(id);
+  const esc = s  => String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const qsa = sel => Array.from(document.querySelectorAll(sel));
 
   // ── API helpers ──────────────────────────────────────────────────────────
-  async function GET(path) {
-    const r = await fetch(path, { cache: 'no-store' });
+  async function GET(url) {
+    const r = await fetch(url, { cache:'no-store' });
     const t = await r.text();
-    try { return JSON.parse(t); }
-    catch { console.error('GET parse error', path, t); return { ok: false }; }
+    try { return JSON.parse(t); } catch { return { ok:false, error:t }; }
   }
-
-  async function POST(path, body) {
-    const r = await fetch(path, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-      body:    JSON.stringify(body || {})
+  async function POST(url, body) {
+    const r = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
     });
     const t = await r.text();
-    try { return JSON.parse(t); }
-    catch { console.error('POST parse error', path, t); return { ok: false }; }
+    try { return JSON.parse(t); } catch { return { ok:false, error:t }; }
   }
 
-  // ── Alert table ──────────────────────────────────────────────────────────
+  // ── State ────────────────────────────────────────────────────────────────
+  let page = 1, totalPages = 1, currentAlertId = null;
+  const SEV_CLASS = { low:'low', mid:'mid', high:'high', critical:'critical' };
+  const STATUS_LABEL = {
+    open:'Open', investigating:'Investigating',
+    resolved:'Resolved', false_positive:'False Positive'
+  };
+
+  // ── Severity badge ───────────────────────────────────────────────────────
+  function sevBadge(s) {
+    return `<span class="sev sev-${esc(s)}">${esc((s||'').toUpperCase())}</span>`;
+  }
+  function statusBadge(s) {
+    return `<span class="status-badge status-${esc(s)}">${esc(STATUS_LABEL[s]||s)}</span>`;
+  }
+
+  // ── Load alerts table ────────────────────────────────────────────────────
   async function loadAlerts() {
-    const sev  = $('fSeverity').value;
-    const typ  = $('fType').value;
-    const act  = $('fActive').value;
-    const hrs  = $('fHours').value;
-    const q    = $('fSearch').value.trim();
-    const url  = `/api/alerts/list.php?page=${page}&per_page=${perPage}`
-               + `&severity=${encodeURIComponent(sev)}`
-               + `&type=${encodeURIComponent(typ)}`
-               + `&active=${encodeURIComponent(act)}`
-               + `&hours=${encodeURIComponent(hrs)}`
-               + `&q=${encodeURIComponent(q)}`
-               + `&sort=unread_first`;   // unacknowledged entries always on top
+    const params = new URLSearchParams({
+      severity: $('fSeverity')?.value || '',
+      type:     $('fType')?.value     || '',
+      active:   $('fActive')?.value   || '',
+      hours:    $('fHours')?.value    || '0',
+      status:   $('fStatus')?.value   || '',
+      search:   $('fSearch')?.value   || '',
+      page,
+      per_page: $('perPage')?.value   || 50,
+    });
 
-    const res = await GET(url);
-    if (!res.ok) { console.error('loadAlerts failed', res); return; }
+    const data = await GET(`/api/alerts/get_alerts.php?${params}`);
+    const tbody = document.querySelector('#alertsTable tbody');
+    if (!tbody) return;
 
-    total = res.total || 0;
-    const pages = Math.ceil(total / perPage) || 1;
-    $('pageInfo').textContent = `Page ${res.page} of ${pages}  (${total} total)`;
-
-    const tb    = document.querySelector('#alertsTable tbody');
-    const empty = $('alertsEmpty');
-    tb.innerHTML = '';
-    // Reset select-all when table content changes
-    const selAll = $('alertsSelectAll');
-    if (selAll) selAll.checked = false;
-    syncBulkBar();
-
-    if (!Array.isArray(res.alerts) || res.alerts.length === 0) {
-      if (empty) empty.style.display = 'block';
+    if (!data.ok || !data.alerts?.length) {
+      tbody.innerHTML = '';
+      if ($('alertsEmpty')) $('alertsEmpty').style.display = 'block';
+      $('pageInfo').textContent = 'No results';
       return;
     }
-    if (empty) empty.style.display = 'none';
+    if ($('alertsEmpty')) $('alertsEmpty').style.display = 'none';
 
-    res.alerts.forEach(a => {
-      // Extract human-readable name from admin_note
-      let name = '';
-      try {
-        const n = JSON.parse(a.admin_note || '{}');
-        name = n.case_name || n.details?.case_name || n.details?.artifact || n.artifact || '';
-      } catch (_) {}
+    totalPages = data.total_pages || 1;
+    $('pageInfo').textContent = `Page ${page} of ${totalPages}  (${data.total || 0} alerts)`;
 
-      const sevClass = 'sev sev-' + (a.severity || 'mid').toLowerCase();
+    tbody.innerHTML = data.alerts.map(a => {
+      const noteData = (() => { try { return JSON.parse(a.admin_note||'{}'); } catch { return {}; } })();
+      const caseName = noteData.case_name || `Alert #${a.id}`;
+      return `
+        <tr data-id="${a.id}" style="cursor:pointer">
+          <td class="col-cb"><input type="checkbox" class="alert-cb" data-id="${a.id}"></td>
+          <td style="color:#7a9bbf;font-weight:600">#${esc(a.id)}</td>
+          <td>${sevBadge(a.severity)}</td>
+          <td style="color:#b8c7dc">${esc(a.alert_type)}</td>
+          <td style="font-family:monospace;font-size:12px">${esc(a.source_ip||'—')}</td>
+          <td>${statusBadge(a.status||'open')}</td>
+          <td style="font-size:12px;color:#7a9bbf">${esc(a.assigned_username||'—')}</td>
+          <td>${esc(a.count||1)}</td>
+          <td style="font-size:12px;color:#4a6a8a">${esc((a.acknowledged_time||'').slice(0,16)||'—')}</td>
+          <td>
+            <button class="btn small" onclick="openAlertModal(${a.id});event.stopPropagation()">
+              Open
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
 
-      const tr = document.createElement('tr');
-      tr.dataset.id = a.id;
-      tr.title      = 'Click to view details';
-      tr.innerHTML  = `
-        <td class="col-cb" onclick="event.stopPropagation()">
-          <input type="checkbox" class="alert-cb" data-id="${a.id}">
-        </td>
-        <td>${a.id}</td>
-        <td><span class="${sevClass}">${(a.severity || 'mid').toUpperCase()}</span></td>
-        <td>${escHtml(a.alert_type || '—')}</td>
-        <td>${escHtml(a.source_ip  || '—')}</td>
-        <td>${escHtml(name         || '—')}</td>
-        <td>${a.count || 1}</td>
-        <td>${a.last_seen || '—'}</td>
-        <td>${a.is_active ? '<span style="color:#7ecb7e">● Yes</span>'
-                          : '<span style="color:#4a5a6e">● No</span>'}</td>
-      `;
-      tr.addEventListener('click', e => {
-        if (e.target.type === 'checkbox') return;
-        openModal(a.id);
+    // Row click → open modal
+    tbody.querySelectorAll('tr[data-id]').forEach(row => {
+      row.addEventListener('click', e => {
+        if (e.target.classList.contains('alert-cb')) return;
+        openAlertModal(parseInt(row.dataset.id));
       });
-      // Checkbox changes sync the bulk bar
-      tr.querySelector('.alert-cb').addEventListener('change', syncBulkBar);
-      tb.appendChild(tr);
     });
-  }
 
-  // ── Bulk actions ─────────────────────────────────────────────────────────
-  function setupBulk() {
-    $('alertsSelectAll').addEventListener('change', e => {
+    // Checkboxes
+    tbody.querySelectorAll('.alert-cb').forEach(cb => {
+      cb.addEventListener('change', syncBulkBar);
+    });
+
+    $('alertsSelectAll')?.addEventListener('change', e => {
       qsa('#alertsTable tbody .alert-cb').forEach(cb => cb.checked = e.target.checked);
       syncBulkBar();
     });
-
-    $('alertsBulkClear').addEventListener('click', () => {
-      qsa('#alertsTable tbody .alert-cb').forEach(cb => cb.checked = false);
-      $('alertsSelectAll').checked = false;
-      syncBulkBar();
-    });
-
-    $('alertsBulkDelete').addEventListener('click', async () => {
-      const ids = getSelectedAlertIds();
-      if (!ids.length) return;
-      if (!confirm(`Delete ${ids.length} alert(s)? This cannot be undone.`)) return;
-      const res = await POST('/api/delete_alerts.php', { ids });
-      if (!res.ok) return alert(res.error || 'Delete failed');
-      $('alertsSelectAll').checked = false;
-      await loadAlerts();
-    });
-
-    $('alertsBulkAck').addEventListener('click', async () => {
-      const ids = getSelectedAlertIds();
-      if (!ids.length) return;
-      if (!confirm(`Acknowledge ${ids.length} alert(s)?`)) return;
-      await Promise.all(ids.map(id => POST('/api/ack_alert.php', { id })));
-      $('alertsSelectAll').checked = false;
-      await loadAlerts();
-      loadNotifications().catch(() => {});
-    });
-  }
-
-  function getSelectedAlertIds() {
-    return qsa('#alertsTable tbody .alert-cb:checked')
-      .map(cb => parseInt(cb.dataset.id, 10));
   }
 
   function syncBulkBar() {
     const checked = qsa('#alertsTable tbody .alert-cb:checked').length;
     const bar = $('alertsBulkBar');
-    if (bar) {
-      bar.style.display = checked > 0 ? 'flex' : 'none';
-      const cnt = $('alertsBulkCount');
-      if (cnt) cnt.textContent = `${checked} alert${checked !== 1 ? 's' : ''} selected`;
-    }
+    if (bar) bar.style.display = checked > 0 ? 'flex' : 'none';
+    const cnt = $('alertsBulkCount');
+    if (cnt) cnt.textContent = `${checked} alert${checked !== 1 ? 's' : ''} selected`;
   }
 
-  // ── Detail modal ─────────────────────────────────────────────────────────
-  function setupModal() {
-    $('alertModalClose').addEventListener('click',  hideModal);
-    $('alertModalCancel').addEventListener('click', hideModal);
-    document.querySelector('#alertModal .modal-backdrop')
-      ?.addEventListener('click', hideModal);
-    $('alertAckBtn').addEventListener('click', ackCurrentAlert);
-    $('alertDeleteBtn').addEventListener('click', deleteCurrentAlert);
+  // ── Pagination ───────────────────────────────────────────────────────────
+  $('btnFilter')?.addEventListener('click', () => { page = 1; loadAlerts(); });
+  $('prevPage')?.addEventListener('click',  () => { if (page > 1) { page--; loadAlerts(); } });
+  $('nextPage')?.addEventListener('click',  () => { if (page < totalPages) { page++; loadAlerts(); } });
+
+  // ── Bulk actions ─────────────────────────────────────────────────────────
+  $('alertsBulkAck')?.addEventListener('click', async () => {
+    const ids = qsa('#alertsTable tbody .alert-cb:checked').map(cb => parseInt(cb.dataset.id));
+    await Promise.all(ids.map(id => POST('/api/alerts/escalate.php', { action:'status', alert_id:id, status:'resolved' })));
+    loadAlerts();
+  });
+  $('alertsBulkDelete')?.addEventListener('click', async () => {
+    if (!confirm(`Delete ${qsa('#alertsTable tbody .alert-cb:checked').length} alerts?`)) return;
+    const ids = qsa('#alertsTable tbody .alert-cb:checked').map(cb => parseInt(cb.dataset.id));
+    await Promise.all(ids.map(id => POST('/api/alerts/delete.php', { id })));
+    loadAlerts();
+  });
+  $('alertsBulkClear')?.addEventListener('click', () => {
+    qsa('#alertsTable tbody .alert-cb').forEach(cb => cb.checked = false);
+    if ($('alertsSelectAll')) $('alertsSelectAll').checked = false;
+    syncBulkBar();
+  });
+
+  // ── Alert detail / escalation modal ─────────────────────────────────────
+  let analysts = [];
+
+  async function loadAnalysts() {
+    const d = await GET('/api/alerts/escalate.php?action=analysts');
+    analysts = d.analysts || [];
+    const sel = $('mdAssignee');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Unassigned —</option>' +
+      analysts.map(a => `<option value="${a.id}">${esc(a.username)}</option>`).join('');
   }
 
-  function hideModal() {
-    $('alertModal').classList.add('hidden');
-    openAlertId = null;
-  }
-
-  async function openModal(id) {
-    openAlertId = id;
-    $('alertModalTitle').textContent = `Alert #${id}`;
-    $('alertModalBody').innerHTML    = '<div class="empty">Loading…</div>';
-    $('alertAckBtn').disabled        = true;
+  window.openAlertModal = async function(alert_id) {
+    currentAlertId = alert_id;
+    $('alertModalTitle').textContent = `Alert #${alert_id}`;
     $('alertModal').classList.remove('hidden');
+    $('mdDetails').textContent = 'Loading…';
+    $('mdNotes').innerHTML = '';
 
-    const d = await GET(`/api/alerts/details.php?id=${encodeURIComponent(id)}`);
-    if (!d.ok) {
-      $('alertModalBody').innerHTML = `<div class="empty">Failed to load: ${escHtml(d.error || 'unknown error')}</div>`;
+    const d = await GET(`/api/alerts/escalate.php?action=detail&alert_id=${alert_id}`);
+    if (!d.ok) { $('mdDetails').textContent = d.error; return; }
+
+    const a = d.alert;
+    const noteData = (() => { try { return JSON.parse(a.admin_note||'{}'); } catch { return {}; } })();
+
+    // Summary
+    $('mdId').textContent       = `#${a.id}`;
+    $('mdSeverity').innerHTML   = sevBadge(a.severity);
+    $('mdType').textContent     = a.alert_type;
+    $('mdIp').textContent       = a.source_ip || '—';
+    $('mdCount').textContent    = a.count || 1;
+    $('mdStatus').value         = a.status || 'open';
+
+    // Assignment
+    if ($('mdAssignee') && analysts.length) {
+      $('mdAssignee').value = a.assigned_to || '';
+    }
+    $('mdAssignInfo').innerHTML = a.assigned_username
+      ? `Assigned to <strong style="color:#c5d8f0">${esc(a.assigned_username)}</strong>` +
+        ` at ${esc((a.assigned_at||'').slice(0,16))}`
+      : 'Not yet assigned';
+
+    // Details
+    $('mdDetails').textContent = JSON.stringify(noteData, null, 2);
+
+    // Notes thread
+    renderNotes(d.notes || []);
+  };
+
+  function renderNotes(notes) {
+    const el = $('mdNotes');
+    if (!notes.length) {
+      el.innerHTML = '<div style="font-size:12px;color:#2a4a6a;padding:8px 0">No notes yet.</div>';
       return;
     }
-
-    const a   = d.alert       || {};
-    const occ = d.occurrences || [];
-
-    // Parse admin_note for readable fields
-    let caseName = '', noteDetails = null;
-    try {
-      const n  = JSON.parse(a.admin_note || '{}');
-      caseName = n.case_name || n.details?.case_name || n.details?.artifact || n.artifact || '';
-      noteDetails = n.details || null;
-    } catch (_) {}
-
-    // KV grid
-    const kvItems = [
-      { label: 'Alert ID',   val: a.id },
-      { label: 'Type',       val: a.alert_type },
-      { label: 'Severity',   val: (a.severity || 'mid').toUpperCase() },
-      { label: 'Source IP',  val: a.source_ip  || 'n/a' },
-      { label: 'Active',     val: a.is_active  ? 'Yes' : 'No' },
-      { label: 'Hit Count',  val: a.count      || 1 },
-      { label: 'Name',       val: caseName     || '—' },
-      { label: 'Acked At',   val: a.acknowledged_time || '—' },
-    ];
-
-    // If details has extra fields, show them
-    if (noteDetails && typeof noteDetails === 'object') {
-      Object.entries(noteDetails).forEach(([k, v]) => {
-        if (k === 'case_name' || k === 'artifact') return; // already shown
-        kvItems.push({ label: k, val: Array.isArray(v) ? v.join(', ') : String(v) });
-      });
-    }
-
-    const kvHTML = kvItems.map(item => `
-      <div class="kv-item">
-        <div class="kv-label">${escHtml(item.label)}</div>
-        <div class="kv-val">${escHtml(String(item.val ?? '—'))}</div>
-      </div>
-    `).join('');
-
-    // Timeline
-    let timelineHTML = '';
-    if (occ.length === 0) {
-      timelineHTML = '<div class="tl-empty">No occurrences recorded.</div>';
-    } else {
-      timelineHTML = occ.map(o => `
-        <div class="tl-item">
-          <div class="tl-ts">${escHtml(o.occurred_at || '')}</div>
-          <div class="tl-msg">${escHtml(o.text || '(no raw line available)')}</div>
-          ${o.source_ip ? `<div class="tl-ip">from ${escHtml(o.source_ip)}</div>` : ''}
-        </div>
-      `).join('');
-    }
-
-    $('alertModalBody').innerHTML = `
-      <div class="kv-grid">${kvHTML}</div>
-      <div class="section-title">Occurrence Timeline (${occ.length} event${occ.length !== 1 ? 's' : ''})</div>
-      <div class="timeline">${timelineHTML}</div>
-    `;
-
-    // Enable Ack only if still active
-    $('alertAckBtn').disabled    = !a.is_active;
-    $('alertDeleteBtn').disabled = false;
+    el.innerHTML = notes.map(n => {
+      const isSystem = n.author === 'system' || n.note.endsWith('.');
+      return `
+        <div class="note-entry ${isSystem ? 'note-system' : ''}">
+          <div class="note-meta">
+            <strong>${esc(n.author)}</strong> &nbsp;·&nbsp; ${esc((n.created_at||'').slice(0,16))}
+          </div>
+          <div class="note-body">${esc(n.note)}</div>
+        </div>`;
+    }).join('');
+    // Scroll to bottom of notes
+    el.scrollTop = el.scrollHeight;
   }
 
-  async function ackCurrentAlert() {
-    if (!openAlertId) return;
-    if (!confirm('Acknowledge this alert?')) return;
-    await POST('/api/ack_alert.php', { id: parseInt(openAlertId, 10) });
-    hideModal();
-    await loadAlerts();
-    loadNotifications().catch(() => {});
-  }
-
-  async function deleteCurrentAlert() {
-    if (!openAlertId) return;
-    if (!confirm('Delete this alert permanently? This cannot be undone.')) return;
-    const res = await POST('/api/delete_alerts.php', { ids: [parseInt(openAlertId, 10)] });
-    if (!res.ok) return alert(res.error || 'Delete failed');
-    hideModal();
-    await loadAlerts();
-    loadNotifications().catch(() => {});
-  }
-
-  // ── Bell / Notifications ─────────────────────────────────────────────────
-  // Uses the grouped get_alerts.php endpoint.
-  // Clicking an item navigates to alerts.html?id=N so the modal opens.
-  async function loadNotifications() {
-    const d     = await GET('/api/get_alerts.php');
-    const badge = $('notiBadge');
-    if (badge) badge.textContent = d.count ?? 0;
-
-    const list = $('notiList');
-    if (!list) return;
-    list.innerHTML = '';
-
-    const items = Array.isArray(d.items) ? d.items : [];
-
-    if (items.length === 0) {
-      list.innerHTML = '<div style="padding:8px 12px;color:#9aa8bd;font-size:12px;">No active alerts</div>';
-      return;
-    }
-
-    items.forEach(a => {
-      const sev     = (a.severity || 'mid').toLowerCase();
-      const label   = a.source_ip || 'n/a';
-      const count   = a.hit_count > 1 ? ` (${a.hit_count})` : '';
-      const typeStr = (a.alert_type || '').toUpperCase();
-
-      const div = document.createElement('div');
-      div.className = 'noti-item';
-      div.style.cursor = 'pointer';
-      div.innerHTML = `
-        <div style="flex:1">
-          <div class="noti-kind">${typeStr} — ${escHtml(label)}${escHtml(count)}</div>
-          <div class="noti-sev ${sev}">${(a.severity || 'MID').toUpperCase()}</div>
-        </div>
-        <span style="font-size:11px;color:#4a6a8a;align-self:center">▶</span>
-      `;
-      // Clicking navigates to the alert detail — works from any page
-      div.addEventListener('click', () => {
-        const dest = `/alerts.html?id=${a.id}`;
-        if (window.location.pathname.endsWith('alerts.html')) {
-          // Already on alerts page — just open the modal directly
-          $('notiMenu')?.classList.add('hidden');
-          openModal(a.id).catch(console.error);
-        } else {
-          window.location.href = dest;
-        }
-      });
-      list.appendChild(div);
+  // Status change
+  $('btnSetStatus')?.addEventListener('click', async () => {
+    if (!currentAlertId) return;
+    const status = $('mdStatus').value;
+    const r = await POST('/api/alerts/escalate.php', {
+      action:'status', alert_id:currentAlertId, status
     });
+    if (!r.ok) { alert(r.error); return; }
+    refreshModalNotes();
+    loadAlerts();
+  });
+
+  // Assign
+  $('btnAssign')?.addEventListener('click', async () => {
+    if (!currentAlertId) return;
+    const analyst_id = parseInt($('mdAssignee').value) || 0;
+    const r = await POST('/api/alerts/escalate.php', {
+      action:'assign', alert_id:currentAlertId, analyst_id
+    });
+    if (!r.ok) { alert(r.error); return; }
+    // Refresh assignment info
+    const d = await GET(`/api/alerts/escalate.php?action=detail&alert_id=${currentAlertId}`);
+    if (d.ok) {
+      $('mdAssignInfo').innerHTML = d.alert.assigned_username
+        ? `Assigned to <strong style="color:#c5d8f0">${esc(d.alert.assigned_username)}</strong>` +
+          ` at ${esc((d.alert.assigned_at||'').slice(0,16))}`
+        : 'Not yet assigned';
+      renderNotes(d.notes || []);
+    }
+    loadAlerts();
+  });
+
+  // Add note
+  $('btnAddNote')?.addEventListener('click', addNote);
+  $('mdNoteInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.ctrlKey) addNote();
+  });
+
+  async function addNote() {
+    if (!currentAlertId) return;
+    const note = $('mdNoteInput').value.trim();
+    if (!note) return;
+    const r = await POST('/api/alerts/escalate.php', {
+      action:'note', alert_id:currentAlertId, note
+    });
+    if (!r.ok) { alert(r.error); return; }
+    $('mdNoteInput').value = '';
+    renderNotes(r.notes || []);
   }
 
-  function setupBell() {
-    const bell = $('notiBell'), menu = $('notiMenu');
-    if (!bell || !menu) return;
-    bell.onclick = () => menu.classList.toggle('hidden');
-    document.addEventListener('click', e => {
-      if (!menu.contains(e.target) && !bell.contains(e.target))
-        menu.classList.add('hidden');
-    }, { passive: true });
-    loadNotifications();
+  async function refreshModalNotes() {
+    if (!currentAlertId) return;
+    const d = await GET(`/api/alerts/escalate.php?action=detail&alert_id=${currentAlertId}`);
+    if (d.ok) renderNotes(d.notes || []);
   }
 
-  // ── Utility ───────────────────────────────────────────────────────────────
-  function escHtml(s) {
-    return String(s).replace(/[&<>"']/g, ch =>
-      ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch])
-    );
+  // Close modal
+  function closeModal() {
+    $('alertModal').classList.add('hidden');
+    currentAlertId = null;
   }
+  $('alertModalClose')?.addEventListener('click',  closeModal);
+  $('alertModalClose2')?.addEventListener('click', closeModal);
+  $('alertModalOverlay')?.addEventListener('click', closeModal);
+
+  // ── MTTA/MTTR metrics modal ──────────────────────────────────────────────
+  async function openMetrics() {
+    $('metricsModal').classList.remove('hidden');
+    $('metricsBody').innerHTML = 'Loading…';
+    const d = await GET('/api/alerts/escalate.php?action=metrics');
+    if (!d.ok) { $('metricsBody').innerHTML = `Error: ${esc(d.error)}`; return; }
+    const rows = d.metrics || [];
+    if (!rows.length) { $('metricsBody').innerHTML = '<div class="empty">No data yet.</div>'; return; }
+    $('metricsBody').innerHTML = `
+      <table class="metric-table">
+        <thead>
+          <tr>
+            <th>Analyst</th>
+            <th>Assigned</th>
+            <th>Acked</th>
+            <th>Resolved</th>
+            <th>Avg MTTA (min)</th>
+            <th>Avg MTTR (min)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td style="color:#c5d8f0">${esc(r.username)}</td>
+              <td>${esc(r.total_assigned)}</td>
+              <td>${esc(r.total_acked)}</td>
+              <td>${esc(r.total_resolved)}</td>
+              <td>${r.avg_mtta_minutes ?? '—'}</td>
+              <td>${r.avg_mttr_minutes ?? '—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:#4a6a8a;margin-top:10px">
+        MTTA = Mean Time to Acknowledge &nbsp;·&nbsp; MTTR = Mean Time to Resolve
+      </div>`;
+  }
+  $('metricsModalClose')?.addEventListener('click',  () => $('metricsModal').classList.add('hidden'));
+  $('metricsModalClose2')?.addEventListener('click', () => $('metricsModal').classList.add('hidden'));
+  $('metricsOverlay')?.addEventListener('click',     () => $('metricsModal').classList.add('hidden'));
+
+  // ── Bell notifications ───────────────────────────────────────────────────
+  async function loadNotifications() {
+    const d = await GET('/api/notifications.php');
+    if (!d.ok) return;
+    const count = d.notifications?.length || 0;
+    const badge = $('notiBadge');
+    if (badge) badge.textContent = count > 99 ? '99+' : count;
+    const list = $('notiList');
+    if (list) {
+      list.innerHTML = count
+        ? d.notifications.map(n => `
+            <div class="dropdown-item" onclick="openAlertModal(${n.alert_id||0})">
+              <div style="font-size:12px;color:#c5d8f0">${esc(n.message)}</div>
+              <div style="font-size:11px;color:#4a6a8a">${esc((n.created_at||'').slice(0,16))}</div>
+            </div>`).join('')
+        : '<div class="dropdown-item" style="color:#4a6a8a">No notifications</div>';
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  (async function init() {
+    await Promise.all([loadAlerts(), loadAnalysts(), loadNotifications()]);
+    setInterval(loadAlerts,       15000);
+    setInterval(loadNotifications, 10000);
+
+    // Add metrics button to page if not present
+    const filterBar = document.querySelector('.filters');
+    if (filterBar) {
+      const mb = document.createElement('button');
+      mb.className = 'btn small';
+      mb.textContent = '📊 Response Metrics';
+      mb.style.marginLeft = '8px';
+      mb.addEventListener('click', openMetrics);
+      filterBar.appendChild(mb);
+    }
+
+    // Bell toggle
+    $('notiBell')?.addEventListener('click', () => {
+      $('notiMenu')?.classList.toggle('hidden');
+    });
+  })();
 
 })();

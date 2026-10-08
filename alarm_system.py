@@ -191,6 +191,22 @@ class AlarmSystem:
 
             self._insert_occurrence_summary(cur, new_id, fk_msg_id, source_ip, admin_note_json)
 
+            # Bell notification — notify all admin/analyst users for high/critical alerts
+            if sev in ('high', 'critical'):
+                try:
+                    cur.execute(
+                        """INSERT INTO ui_notifications (user_id, message, alert_id)
+                           SELECT id,
+                                  %s,
+                                  %s
+                             FROM login
+                            WHERE is_active = true
+                              AND role IN ('admin', 'analyst')""",
+                        (f"New {sev.upper()} alert: {case_name}", new_id)
+                    )
+                except Exception as e:
+                    log.debug("Bell notification insert failed (non-fatal): %s", e)
+
             conn.commit()
             log.info("Alert created id=%s alert_id=%s type=%s sev=%s src=%s",
                      new_id, external_alert_id, alert_type, sev, source_ip)
