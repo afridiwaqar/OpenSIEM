@@ -312,29 +312,28 @@
   $('metricsOverlay')?.addEventListener('click',     () => $('metricsModal').classList.add('hidden'));
 
   // ── Bell notifications ───────────────────────────────────────────────────
-  async function loadNotifications() {
-    const d = await GET('/api/notifications.php');
-    if (!d.ok) return;
-    const count = d.notifications?.length || 0;
-    const badge = $('notiBadge');
-    if (badge) badge.textContent = count > 99 ? '99+' : count;
-    const list = $('notiList');
-    if (list) {
-      list.innerHTML = count
-        ? d.notifications.map(n => `
-            <div class="dropdown-item" onclick="openAlertModal(${n.alert_id||0})">
-              <div style="font-size:12px;color:#c5d8f0">${esc(n.message)}</div>
-              <div style="font-size:11px;color:#4a6a8a">${esc((n.created_at||'').slice(0,16))}</div>
-            </div>`).join('')
-        : '<div class="dropdown-item" style="color:#4a6a8a">No notifications</div>';
-    }
-  }
+  // async function loadNotifications() {
+  //   const d = await GET('/api/notifications.php');
+  //   if (!d.ok) return;
+  //   const count = d.notifications?.length || 0;
+  //   const badge = $('notiBadge');
+  //   if (badge) badge.textContent = count > 99 ? '99+' : count;
+  //   const list = $('notiList');
+  //   if (list) {
+  //     list.innerHTML = count
+  //       ? d.notifications.map(n => `
+  //           <div class="dropdown-item" onclick="openAlertModal(${n.alert_id||0})">
+  //             <div style="font-size:12px;color:#c5d8f0">${esc(n.message)}</div>
+  //             <div style="font-size:11px;color:#4a6a8a">${esc((n.created_at||'').slice(0,16))}</div>
+  //           </div>`).join('')
+  //       : '<div class="dropdown-item" style="color:#4a6a8a">No notifications</div>';
+  //   }
+  // }
 
   // ── Init ─────────────────────────────────────────────────────────────────
   (async function init() {
-    await Promise.all([loadAlerts(), loadAnalysts(), loadNotifications()]);
+    await Promise.all([loadAlerts(), loadAnalysts()]);
     setInterval(loadAlerts,       15000);
-    setInterval(loadNotifications, 10000);
 
     // Add metrics button to page if not present
     const filterBar = document.querySelector('.filters');
@@ -346,11 +345,6 @@
       mb.addEventListener('click', openMetrics);
       filterBar.appendChild(mb);
     }
-
-    // Bell toggle
-    $('notiBell')?.addEventListener('click', () => {
-      $('notiMenu')?.classList.toggle('hidden');
-    });
   })();
 
 })();

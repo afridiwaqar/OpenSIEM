@@ -283,60 +283,6 @@ if (window.__chroniclerInit) {
       }
     });
 
-    // ---------- Notifications (bell) ----------
-    const notiBell  = $('notiBell');
-    const notiBadge = $('notiBadge');
-    const notiMenu  = $('notiMenu');
-    const notiList  = $('notiList');
-
-    async function loadNotifications() {
-      try {
-        const data = await api('get_alerts.php');
-        if (notiBadge) notiBadge.textContent = data.count ?? 0;
-        if (!notiList) return;
-
-        notiList.innerHTML = '';
-        const items = Array.isArray(data.items) ? data.items : [];
-
-        if (items.length === 0) {
-          notiList.innerHTML = '<div style="padding:10px;color:#9aa8bd;font-size:12px;">No active alerts</div>';
-          return;
-        }
-
-        items.forEach(a => {
-          const sev   = (a.severity || 'mid').toLowerCase();
-          const label = a.source_ip || 'n/a';
-          const count = a.hit_count > 1 ? ` (${a.hit_count})` : '';
-
-          const row = document.createElement('div');
-          row.className    = 'noti-item';
-          row.style.cursor = 'pointer';
-          row.innerHTML = `
-            <div style="flex:1">
-              <div class="noti-kind">${(a.alert_type||'').toUpperCase()} — ${label}${count}</div>
-              <div class="noti-sev ${sev}">${(a.severity||'MID').toUpperCase()}</div>
-            </div>
-            <span style="font-size:11px;color:#4a6a8a;align-self:center">▶</span>
-          `;
-          // Click navigates to alerts page; the ?id= param auto-opens the detail modal
-          row.addEventListener('click', () => {
-            notiMenu?.classList.add('hidden');
-            window.location.href = `/alerts.html?id=${a.id}`;
-          });
-          notiList.appendChild(row);
-        });
-      } catch(e) { console.error('notifications', e); }
-    }
-
-    notiBell?.addEventListener('click', () => {
-      notiMenu.classList.toggle('hidden');
-    });
-    document.addEventListener('click', (e) => {
-      if (!notiMenu.contains(e.target) && !notiBell.contains(e.target)) {
-        notiMenu.classList.add('hidden');
-      }
-    });
-
     // ---------- Charts from /api/dashboard/stats.php ----------
     let chartAlertsSeverity, chartMsgsPerHour, chartCorrelationCases, chartTopIPs, chartArtifactsSeverity;
 
@@ -433,13 +379,12 @@ if (window.__chroniclerInit) {
     }
 
     // ---------- Intervals ----------
-    loadAlertRibbon(); loadEPS(); loadLiveLogs(); loadClientStats(); loadNotifications(); loadDashboardStats(); loadWidgets();
+    loadAlertRibbon(); loadEPS(); loadLiveLogs(); loadClientStats(); loadDashboardStats(); loadWidgets();
     // Throttle frequent polling to reduce memory/CPU pressure
     setInterval(loadAlertRibbon,   5000);
     setInterval(loadEPS,           5000);
     setInterval(loadLiveLogs,      3000);
     setInterval(loadClientStats,   10000);
-    setInterval(loadNotifications, 5000);
     setInterval(loadDashboardStats,30000);
     setInterval(loadWidgets,       15000);
   }

@@ -35,6 +35,7 @@
 
     // ── Reload rules ──
     $('reloadRulesBtn').addEventListener('click', reloadRules);
+    $('btnCreateUC')?.addEventListener('click', saveUseCase);
 
     $('hitsPerPage')?.addEventListener('change', () => {
       hitsPerPage = parseInt($('hitsPerPage').value, 10) || 50;
@@ -48,20 +49,30 @@
     });
 
     // ── "Add log line" button in Create form ──
-    $('addLineBtn').addEventListener('click', () => appendCreateLine(''));
+    //$('addLineBtn').addEventListener('click', () => appendCreateLine(''));
 
     // ── Save (create or update) ──
-    $('btnSaveUC').addEventListener('click', saveUseCase);
+    //$('btnSaveUC').addEventListener('click', saveUseCase);
 
     // ── Cancel edit (reset form to Create mode) ──
-    $('btnCancelEdit').addEventListener('click', resetCreateForm);
+    //$('btnCancelEdit').addEventListener('click', resetCreateForm);
 
     // ── Edit modal wiring ──
-    $('editModalClose').addEventListener('click', hideEditModal);
-    $('editCancelBtn').addEventListener('click',  hideEditModal);
-    $('editSaveBtn').addEventListener('click',    saveEditModal);
-    $('editDeleteUC').addEventListener('click',   deleteFromEditModal);
-    $('editAddLineBtn').addEventListener('click', () => appendEditLine(null));
+    // $('editModalClose').addEventListener('click', hideEditModal);
+    // $('editCancelBtn').addEventListener('click',  hideEditModal);
+    // $('editSaveBtn').addEventListener('click',    saveEditModal);
+    // $('editDeleteUC').addEventListener('click',   deleteFromEditModal);
+    // $('editAddLineBtn').addEventListener('click', () => appendEditLine(null));
+
+    // Safe modal bindings
+    $('editModalClose')?.addEventListener('click', hideEditModal);
+    $('editCancelBtn')?.addEventListener('click',  hideEditModal);
+    $('editSaveBtn')?.addEventListener('click',    saveEditModal);
+    $('editDeleteUC')?.addEventListener('click',   deleteFromEditModal);
+    $('editAddLineBtn')?.addEventListener('click', () => appendEditLine(null));
+
+    $('hitModalClose')?.addEventListener('click', hideHitModal);
+
     document.querySelector('#editModal .modal-backdrop')
       ?.addEventListener('click', hideEditModal);
 
@@ -70,10 +81,10 @@
     document.querySelector('#hitModal .modal-backdrop')
       ?.addEventListener('click', hideHitModal);
 
-    appendCreateLine('');
+//    appendCreateLine('');
 
     // ── Initial data load ──
-    await Promise.all([loadHits(), loadUseCases(), loadNotifications()]);
+    await Promise.all([loadHits(), loadUseCases()]);
 
     setInterval(loadHits,         8000);
     setInterval(loadNotifications, 5000);
@@ -139,10 +150,11 @@
   async function saveUseCase() {
     const name   = $('ucName').value.trim();
     const entity = $('ucEntity').value;
-    const lines  = getCreateLines();
+    const msg    = $('ruleMessage').value.trim();
+    const repeat = $('ruleRepeat').checked;
+    const order  = $('ruleOrder').checked;
 
-    if (!name)         return alert('Case Name is required.');
-    if (!lines.length) return alert('Add at least one log line.');
+    if (!name) return alert('Case Name is required.');
 
     // 1. Create the use case
     const res = await POST('/api/correlation/save_rule.php', {
@@ -150,32 +162,18 @@
     });
 
     if (!res.ok) return alert(res.error || 'Failed to create use case.');
+    const caseId = res.case_id;
 
-    const caseId = res.case_id ?? res.id ?? res.new_id ?? res.data?.case_id ?? null;
-    if (!caseId) {
-      return alert(
-        'Use case was created but the server did not return its ID.\n' +
-        'Response was: ' + JSON.stringify(res) + '\n\n' +
-        'Check your save_rule.php — it needs to return {"ok":true,"case_id":<id>}.'
-      );
-    }
-
-    // 2. Add each rule line with its own flags
-    for (const line of lines) {
+    // 2. Add rule if message provided
+    if (msg) {
       const r = await POST('/api/correlation/save_rule.php', {
-        action:     'add_rule',
-        case_id:    caseId,
-        message:    line.message,
-        can_repeat: line.can_repeat,
-        order:      line.order,
+        action: 'add_rule', case_id: caseId, message: msg, can_repeat: repeat, order: order
       });
-      if (!r.ok) {
-        alert('Use case created but a rule failed to save: ' + (r.error || 'unknown'));
-        break;
-      }
+      if (!r.ok) alert('Use case created but rule failed: ' + r.error);
     }
 
-    resetCreateForm();
+    $('ucName').value = '';
+    $('ruleMessage').value = '';
     await loadUseCases();
   }
 
@@ -418,7 +416,6 @@
       btn.addEventListener('click', async () => {
         await POST('/api/ack_alert.php', { id: parseInt(btn.dataset.id, 10) });
         await loadHits();
-        loadNotifications().catch(()=>{});
       });
     });
   }
@@ -476,49 +473,10 @@
     ackBtn.onclick = async () => {
       await POST('/api/ack_alert.php', { id: a.id });
       await loadHits();
-      loadNotifications().catch(()=>{});
       hideHitModal();
     };
 
     $('hitModal').classList.remove('hidden');
-  }
-
-  async function loadNotifications() {
-    const d     = await GET('/api/get_notifications.php');
-    const badge = $('notiBadge');
-    if (badge) badge.textContent = d.count ?? 0;
-
-    const list = $('notiList');
-    if (!list) return;
-    list.innerHTML = '';
-
-    (d.items || []).forEach(a => {
-      const div = document.createElement('div');
-      const sev = (a.severity||'mid').toLowerCase();
-      div.className = 'noti-item';
-      div.innerHTML = `
-        <div>
-          <div class="noti-kind">${(a.alert_type||'').toUpperCase()} — ${a.source_ip||'n/a'}</div>
-          <div class="noti-sev ${sev}">${(a.severity||'MID').toUpperCase()}</div>
-        </div>
-        <button class="btn small noti-ack" data-id="${a.id}">ACK</button>
-      `;
-      list.appendChild(div);
-    });
-
-    list.querySelectorAll('.noti-ack').forEach(btn => btn.onclick = async () => {
-      await POST('/api/ack_alert.php', { id: parseInt(btn.dataset.id, 10) });
-      await loadNotifications();
-    });
-
-    const bell = $('notiBell'), menu = $('notiMenu');
-    if (bell && menu) {
-      bell.onclick = () => menu.classList.toggle('hidden');
-      document.addEventListener('click', e => {
-        if (!menu.contains(e.target) && !bell.contains(e.target))
-          menu.classList.add('hidden');
-      }, { passive:true });
-    }
   }
 
   async function reloadRules() {

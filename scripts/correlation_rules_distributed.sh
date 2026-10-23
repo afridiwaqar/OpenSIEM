@@ -18,10 +18,26 @@ set -euo pipefail
 
 CONF="/etc/opensiem/opensiem.conf"
 
+# read_conf() {
+#     local key="$1" default="$2"
+#     if [[ -f "$CONF" ]]; then
+#         val=$(awk -F'=' "/^\s*${key}\s*=/{gsub(/\s/,\"\",$2); print $2; exit}" "$CONF")
+#         echo "${val:-$default}"
+#     else
+#         echo "$default"
+#     fi
+# }
+
 read_conf() {
     local key="$1" default="$2"
     if [[ -f "$CONF" ]]; then
-        val=$(awk -F'=' "/^\s*${key}\s*=/{gsub(/\s/,\"\",$2); print $2; exit}" "$CONF")
+        val=$(awk -F'=' -v k="$key" '
+            $1 ~ "^[[:space:]]*" k "[[:space:]]*$" {
+                gsub(/[[:space:]]/, "", $2);
+                print $2;
+                exit;
+            }
+        ' "$CONF")
         echo "${val:-$default}"
     else
         echo "$default"

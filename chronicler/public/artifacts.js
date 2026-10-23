@@ -57,8 +57,6 @@
     setupBulkHits();
     setupBulkArt();
     setupGroupModal();
-    setupBell();
-
     await Promise.all([loadHits(), loadArtifacts()]);
     setInterval(loadHits, 8000);
   })();
@@ -202,7 +200,6 @@
       await Promise.all(ids.map(id => POST('/api/ack_alert.php', { id })));
       $('hitsSelectAll').checked = false;
       await loadHits();
-      loadNotifications().catch(() => {});
     });
   }
 
@@ -244,7 +241,6 @@
       const fresh = allHits.filter(h => getArtifactKey(h) === modalArtifact);
       if (fresh.length) renderGroupModal(fresh);
       else hideGroupModal();
-      loadNotifications().catch(() => {});
     });
 
     $('groupBulkDelete').addEventListener('click', async () => {
@@ -511,48 +507,6 @@
     $('artSev').value  = 'mid';
     $('artSrc').value  = '';
     await loadArtifacts();
-  }
-
-  async function loadNotifications() {
-    const data  = await GET('/api/get_alerts.php');
-    const badge = $('notiBadge');
-    if (badge) badge.textContent = data.count ?? 0;
-    const list = $('notiList');
-    if (!list) return;
-    list.innerHTML = '';
-    const items = Array.isArray(data.items) ? data.items : [];
-    if (items.length === 0) {
-      list.innerHTML = '<div style="padding:10px;color:#9aa8bd;font-size:12px;">No active alerts</div>';
-      return;
-    }
-    items.forEach(a => {
-      const sev   = (a.severity || 'mid').toLowerCase();
-      const label = a.source_ip || 'n/a';
-      const count = a.hit_count > 1 ? ` (${a.hit_count})` : '';
-      const div   = document.createElement('div');
-      div.className    = 'noti-item';
-      div.style.cursor = 'pointer';
-      div.innerHTML = `
-        <div style="flex:1">
-          <div class="noti-kind">${(a.alert_type||'').toUpperCase()} — ${escHtml(label)}${escHtml(count)}</div>
-          <div class="noti-sev ${sev}">${(a.severity||'MID').toUpperCase()}</div>
-        </div>
-        <span style="font-size:11px;color:#4a6a8a;align-self:center">▶</span>`;
-      div.addEventListener('click', () => { window.location.href = `/alerts.html?id=${a.id}`; });
-      list.appendChild(div);
-    });
-  }
-
-  function setupBell() {
-    const bell = $('notiBell'), menu = $('notiMenu');
-    if (!bell || !menu) return;
-    bell.addEventListener('click', () => menu.classList.toggle('hidden'));
-    document.addEventListener('click', e => {
-      if (!menu.contains(e.target) && !bell.contains(e.target))
-        menu.classList.add('hidden');
-    }, { passive: true });
-    loadNotifications();
-    setInterval(loadNotifications, 5000);
   }
 
   function escHtml(s) {

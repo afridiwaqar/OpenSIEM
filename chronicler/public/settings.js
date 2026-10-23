@@ -13,7 +13,6 @@
     const me = await GET('/api/auth/me.php');
     if (!me.ok) { location.href = '/login.html'; return; }
     csrf = me.csrf;
-    setupBell();
     setupTabs();
     setupSevChips();
 
@@ -155,49 +154,6 @@
 
     // Auto-hide after 4 seconds
     setTimeout(() => { statusEl.style.display = 'none'; }, 4000);
-  }
-
-  async function loadNotifications() {
-    const data  = await GET('/api/get_alerts.php');
-    const badge = $('notiBadge');
-    const list  = $('notiList');
-    if (badge) badge.textContent = data.count ?? 0;
-    if (!list) return;
-    list.innerHTML = '';
-
-    const items = Array.isArray(data.items) ? data.items : [];
-    if (items.length === 0) {
-      list.innerHTML = '<div style="padding:10px;color:#9aa8bd;font-size:12px;">No active alerts</div>';
-      return;
-    }
-    items.forEach(a => {
-      const sev   = (a.severity || 'mid').toLowerCase();
-      const label = a.source_ip || 'n/a';
-      const count = a.hit_count > 1 ? ` (${a.hit_count})` : '';
-      const div   = document.createElement('div');
-      div.className    = 'noti-item';
-      div.style.cursor = 'pointer';
-      div.innerHTML = `
-        <div style="flex:1">
-          <div class="noti-kind">${(a.alert_type||'').toUpperCase()} — ${escHtml(label)}${escHtml(count)}</div>
-          <div class="noti-sev ${sev}">${(a.severity||'MID').toUpperCase()}</div>
-        </div>
-        <span style="font-size:11px;color:#4a6a8a;align-self:center">▶</span>`;
-      div.addEventListener('click', () => { window.location.href = `/alerts.html?id=${a.id}`; });
-      list.appendChild(div);
-    });
-  }
-
-  function setupBell() {
-    const bell = $('notiBell'), menu = $('notiMenu');
-    if (!bell || !menu) return;
-    bell.addEventListener('click', () => menu.classList.toggle('hidden'));
-    document.addEventListener('click', e => {
-      if (!menu.contains(e.target) && !bell.contains(e.target))
-        menu.classList.add('hidden');
-    }, { passive: true });
-    loadNotifications();
-    setInterval(loadNotifications, 5000);
   }
 
   function escHtml(s) {

@@ -67,7 +67,7 @@ try {
             a.acknowledged_time, a.resolved_at,
             l.username AS assigned_username
          FROM alerts a
-         LEFT JOIN login l ON l.id = a.assigned_to
+         LEFT JOIN login l ON l.user_id = a.assigned_to
          WHERE {$where_sql}
          ORDER BY
              CASE WHEN a.status IN ('open','investigating') THEN 0 ELSE 1 END,
