@@ -16,6 +16,7 @@
 
   <!-- Styles -->
   <link rel="stylesheet" href="/dashboard.css" />
+  <link rel="stylesheet" href="/logview.css" />
   <style>
     /* ── Widget strip ── */
     .widget-strip {
