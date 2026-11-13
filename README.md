@@ -1,3 +1,6 @@
+# Version 2 Almost ready
+
+
 # OpenSIEM ⚛️
 Security Information & Event Management Platform  
 GPL‑3.0 Licensed — Open Source, Community Driven

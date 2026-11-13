@@ -171,26 +171,55 @@ if (window.__chroniclerInit) {
     }
 
     // ---------- Live logs (tail) ----------
+    // Each line shows time, IP, host and process. Click the IP (or anywhere on the
+    // line) to open the Logs page filtered to that system. Text selection is left
+    // alone so lines can still be copied.
     let lastSince = null;
     async function loadLiveLogs() {
       try {
-        const d = await api(`get_live_logs.php${lastSince ? `?since=${encodeURIComponent(lastSince)}` : ''}`);
+        const d = await api(`logs/live.php${lastSince ? `?since=${encodeURIComponent(lastSince)}&limit=200` : '?limit=100'}`);
         const box = $('liveLogs');
-        (d.logs || []).forEach(line => {
+        (d.rows || []).forEach(r => {
           const el = document.createElement('div');
-          el.className = `log ${line.level || 'info'}`;
-          const txt = String(line.text || '');
-          el.textContent = txt.length > LINE_MAX ? (txt.slice(0, LINE_MAX) + '…') : txt;
+          el.className = `ll log ${r.sev || 'info'}`;
+          el.dataset.ip = r.ip || '';
+          el.title = 'Click to open this system in Logs';
+
+          const t = document.createElement('span');
+          t.className = 'll-t'; t.textContent = (r.ts || '').slice(11, 19);
+          el.appendChild(t);
+
+          const a = document.createElement('a');
+          a.className = 'll-ip'; a.textContent = r.ip || '';
+          a.href = `/logs.html?system=${encodeURIComponent(r.ip || '')}&view=live`;
+          el.appendChild(a);
+
+          if (r.host) { const h = document.createElement('span'); h.className = 'll-h'; h.textContent = r.host; el.appendChild(h); }
+          if (r.process) {
+            const p = document.createElement('span'); p.className = 'll-p';
+            p.textContent = r.process + (r.pid ? `[${r.pid}]` : '') + ':'; el.appendChild(p);
+          }
+          const txt = String(r.message || '');
+          const m = document.createElement('span');
+          m.className = 'll-m';
+          m.textContent = txt.length > LINE_MAX ? (txt.slice(0, LINE_MAX) + '…') : txt;
+          el.appendChild(m);
           box.appendChild(el);
         });
-        if (d.logs && d.logs.length) {
-          lastSince = d.logs[d.logs.length - 1].ts;
-          box.scrollTop = box.scrollHeight;
-        }
+        if (d.max_id != null) lastSince = d.max_id;
+        if (d.rows && d.rows.length) box.scrollTop = box.scrollHeight;
         // ✅ Always enforce the cap, not just when new logs arrive
         while (box.children.length > LOG_CAP) box.removeChild(box.firstChild);
       } catch(e) { /* ignore */ }
     }
+    // One delegated handler for every line, present and future.
+    $('liveLogs')?.addEventListener('click', e => {
+      const line = e.target.closest ? e.target.closest('.ll') : null;
+      if (!line || !line.dataset.ip) return;
+      if (e.target.closest('a')) return;                                   // the IP link navigates by itself
+      if (window.getSelection && String(window.getSelection()) !== '') return;   // user is selecting text
+      location.href = `/logs.html?system=${encodeURIComponent(line.dataset.ip)}&view=live`;
+    });
 
     // ---------- Client stats ----------
     async function loadClientStats() {

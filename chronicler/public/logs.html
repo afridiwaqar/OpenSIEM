@@ -12,47 +12,70 @@
   <title>Chronicler • Logs</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/dashboard.css">
+  <link rel="stylesheet" href="/logview.css">
   <style>
-    .wrap { padding:12px; display:grid; grid-template-columns: 1fr 320px; gap:12px; }
-    /* min-width:0 on BOTH columns is the key CSS grid fix —
-       without it grid children won't shrink below their content width */
-    .panel { background:#0f1521; border:1px solid #1c2434; border-radius:8px; padding:12px; min-width:0; overflow:hidden; }
-    .panel h3 { margin:0 0 6px; color:#b8c7dc; }
-    /* Console: fixed height, horizontal scroll for long lines, never expands the column */
-    .console {
-      height:60vh;
-      overflow-x: auto;
-      overflow-y: auto;
-      white-space: pre;
-      word-wrap: normal;
-      /* Critical: width must be constrained to panel, not content */
-      width: 100%;
-      max-width: 100%;
-      box-sizing: border-box;
-      display: block;
-    }
+    .panel { background:#0f1521; border:1px solid #1c2434; border-radius:8px; padding:12px; margin:0 14px 14px; min-width:0; }
     .muted { color:#9aa8bd; font-size:12px; }
-    .table { width:100%; border-collapse: collapse; }
-    .table th, .table td { border-bottom:1px solid #1c2434; padding:8px; text-align:left; font-size:13px; }
-    .table th { color:#9aa8bd; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+    .table { width:100%; border-collapse:collapse; }
+    .table th, .table td { border-bottom:1px solid #1c2434; padding:6px 8px; text-align:left; font-size:13px; vertical-align:top; }
+    .table th { color:#9aa8bd; font-size:11px; text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
+    .tbl-wrap { overflow-x:auto; }
 
-    /* Search bar overrides for the logs page */
-    .search-bar { display:flex; gap:8px; padding:10px 14px; background:#0b0f14; border-bottom:1px solid #1c2434; align-items:center; flex-wrap:wrap; }
-    .search-bar input { flex:1; min-width:200px; padding:9px 10px; border-radius:6px; border:1px solid #1c2434; background:#0f1521; color:#d6e3f3; font-size:13px; }
-    .search-bar input:focus { outline:none; border-color:#2a5a8c; }
-    .search-bar button { padding:8px 14px; background:#1c2434; color:#e9eef5; border:1px solid #2a3550; border-radius:6px; cursor:pointer; font-size:13px; }
-    .search-bar button:hover { filter:brightness(1.1); }
-    .search-bar button.active { background:#1a3a5c; border-color:#2a5a8c; color:#c8dff5; }
-
-    .regex-hint { font-size:11px; color:#4a6a8a; padding:0 4px; white-space:nowrap; }
+    /* toolbars */
+    .lg-bar { display:flex; gap:10px; padding:8px 14px; background:#0b0f14; border-bottom:1px solid #1c2434; align-items:center; flex-wrap:wrap; }
+    .lg-bar label { color:#9aa8bd; font-size:12px; display:flex; align-items:center; gap:6px; }
+    .lg-bar select, .lg-bar input[type=text], .lg-bar input[type=datetime-local], .f-row select, .f-row input {
+      padding:7px 9px; border-radius:6px; border:1px solid #1c2434; background:#0f1521; color:#d6e3f3; font-size:13px; }
+    .lg-bar input#logQuery { flex:1; min-width:240px; }
+    .lg-bar select:focus, .lg-bar input:focus, .f-row select:focus, .f-row input:focus { outline:none; border-color:#2a5a8c; }
+    .lg-bar button, .f-row button, .ctl button, .tab {
+      padding:7px 13px; background:#1c2434; color:#e9eef5; border:1px solid #2a3550; border-radius:6px; cursor:pointer; font-size:13px; }
+    .lg-bar button:hover, .f-row button:hover, .ctl button:hover { filter:brightness(1.15); }
+    .lg-bar button.active, .ctl button.active { background:#1a3a5c; border-color:#2a5a8c; color:#c8dff5; }
+    .lg-bar button.primary { background:#1a3a5c; border-color:#2a5a8c; color:#c8dff5; }
+    .regex-hint { font-size:11px; color:#4a6a8a; }
     .regex-hint code { color:#7ab0d8; }
 
-    /* Search result severity colours */
-    .level-high     { color:#ff9a9a; }
-    .level-critical { color:#ff5b5b; font-weight:600; }
-    .level-mid      { color:#ffd66e; }
-    .level-info     { color:#c9d7ef; }
+    /* filter rows */
+    #filterRows { padding:0 14px; }
+    .f-row { display:flex; gap:8px; align-items:center; padding:5px 0; flex-wrap:wrap; }
+    .f-row .f-val { flex:1; min-width:200px; }
+    .f-row .f-join { color:#4a6a8a; font-size:11px; text-transform:uppercase; width:34px; }
+    .f-row .f-del { padding:6px 10px; }
+
+    /* system strip */
+    .sys-strip { margin:10px 14px; padding:10px 14px; background:#0f1521; border:1px solid #1c2434; border-radius:8px;
+                 display:flex; gap:18px; align-items:center; flex-wrap:wrap; font-size:13px; }
+    .sys-strip .sys-name { font-weight:700; color:#c8dff5; font-size:15px; }
+    .sys-strip .sys-ip { font-family:monospace; color:#6ea8fe; }
+    .sys-strip .kv { color:#9aa8bd; font-size:12px; } .sys-strip .kv b { color:#d6e3f3; font-size:14px; margin-left:4px; }
+    .badge-on  { background:#0a1f0a; color:#7ecb7e; border:1px solid #1a4020; padding:2px 9px; border-radius:10px; font-size:11px; font-weight:700; }
+    .badge-off { background:#3a0a0a; color:#ff6b6b; border:1px solid #5a1a1a; padding:2px 9px; border-radius:10px; font-size:11px; font-weight:700; }
+    .badge-unk { background:#161c28; color:#9aa8bd; border:1px solid #2a3550; padding:2px 9px; border-radius:10px; font-size:11px; font-weight:700; }
+    .chip { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; border:1px solid #3a2f00; background:#1a1500; color:#ffd66e; text-decoration:none; margin-right:4px; }
+    .chip.critical { background:#2a0808; border-color:#8b1a1a; color:#ff6b6b; }
+    .chip.high     { background:#241008; border-color:#7a3010; color:#ff9060; }
+    .mini-bar { display:inline-block; width:46px; height:6px; background:#1c2434; border-radius:3px; vertical-align:middle; margin-left:5px; overflow:hidden; }
+    .mini-bar i { display:block; height:100%; background:#4a8abf; }
+
+    /* tabs */
+    .tabs { display:flex; gap:6px; padding:10px 14px 0; align-items:center; }
+    .tab { border-radius:6px 6px 0 0; border-bottom:none; background:#0b0f14; }
+    .tab.active { background:#0f1521; color:#c8dff5; border-color:#2a5a8c; }
+    .tabs .spacer { flex:1; }
+    .tabs button.act { padding:5px 11px; font-size:12px; background:#1a3a5c; border:1px solid #2a5a8c; color:#c8dff5; border-radius:6px; cursor:pointer; }
+
+    .ctl { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
+    .ctl select, .ctl input { padding:6px 8px; border-radius:6px; border:1px solid #1c2434; background:#0b0f14; color:#d6e3f3; font-size:12px; }
+    .console { height:58vh; overflow:auto; white-space:pre; width:100%; max-width:100%; box-sizing:border-box; display:block; margin:0; }
+
+    .level-high { color:#ff9a9a; } .level-critical { color:#ff5b5b; font-weight:600; }
+    .level-mid { color:#ffd66e; }  .level-info { color:#c9d7ef; }
+    .pivot { cursor:pointer; } .pivot:hover { text-decoration:underline; }
     .err-row td { color:#ff9a9a; font-style:italic; }
+    .banner { margin:8px 0; padding:8px 12px; border-radius:6px; font-size:12px; background:#1a1500; border:1px solid #3a2f00; color:#ffd66e; }
+    .banner.err { background:#2a0808; border-color:#8b1a1a; color:#ff9a9a; }
+    .banner a { color:#9ec5ff; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -82,38 +105,109 @@
     </div>
   </nav>
 
-  <section class="search-bar">
-    <input id="logQuery" placeholder="Search logs… keyword, IP, or /regex/i">
+  <!-- Row 1: system, time, match mode -->
+  <section class="lg-bar">
+    <label>System
+      <select id="sysSelect"><option value="">All systems</option></select>
+    </label>
+    <label>Time
+      <select id="rangeSel">
+        <option value="15m">Last 15 minutes</option>
+        <option value="1h">Last hour</option>
+        <option value="6h">Last 6 hours</option>
+        <option value="24h" selected>Last 24 hours</option>
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
+        <option value="custom">Custom…</option>
+      </select>
+    </label>
+    <span id="customRange" style="display:none;gap:6px;align-items:center">
+      <input type="datetime-local" id="fromDt"> <span class="muted">to</span> <input type="datetime-local" id="toDt">
+    </span>
+    <label>Match
+      <select id="logicSel">
+        <option value="AND">ALL of the filters</option>
+        <option value="OR">ANY of the filters</option>
+      </select>
+    </label>
+    <span class="muted" id="serverTime"></span>
+  </section>
+
+  <!-- Row 2: quick search -->
+  <section class="lg-bar">
+    <input type="text" id="logQuery" placeholder="Search message text… keyword, or /regex/i">
     <button id="regexToggle" title="Toggle regex mode">.*</button>
-    <button id="searchBtn">Search</button>
+    <button id="searchBtn" class="primary">Search</button>
+    <button id="addFilterBtn" title="Add a filter row">+ Filter</button>
+    <button id="clearBtn">Clear</button>
     <span class="regex-hint" id="regexHint" style="display:none">
-      Regex mode — e.g. <code>192\.168\.\d+</code> or <code>fail(ed)?</code> &nbsp;• append <code>/i</code> for case-insensitive
+      Regex mode — e.g. <code>192\.168\.\d+</code> or <code>fail(ed)?</code> • append <code>/i</code> for case-insensitive • matches the stored text, so avoid <code>^</code> and <code>$</code>
     </span>
   </section>
 
-  <div class="wrap">
-    <section class="panel">
-      <h3>Live Logs</h3>
-      <pre id="liveLogs" class="console"></pre>
-    </section>
+  <!-- Filter rows (built by logs.js) -->
+  <section id="filterRows"></section>
 
-    <aside class="panel">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <h3 style="margin:0">Search Results <span id="resCount" style="font-size:11px;color:#6a8aaa;font-weight:normal;text-transform:none;letter-spacing:0"></span></h3>
-        <button id="btnExportPdf" class="search-bar button" title="Export results to PDF"
-          style="padding:5px 11px;background:#1a3a5c;border:1px solid #2a5a8c;color:#c8dff5;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;display:none">
-          ⬇ PDF
-        </button>
-      </div>
-      <div class="muted" style="margin-bottom:6px">Up to 300 matches. Click ⬇ PDF to export.</div>
-      <table class="table" id="resTable">
-        <thead><tr><th>ID</th><th>Sev</th><th>Message</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </aside>
+  <!-- Saved searches -->
+  <section class="lg-bar">
+    <label>Saved
+      <select id="savedSel"><option value="">— saved searches —</option></select>
+    </label>
+    <button id="saveBtn">Save current…</button>
+    <button id="delSavedBtn" style="display:none">Delete</button>
+    <span id="saveForm" style="display:none;gap:6px;align-items:center">
+      <input type="text" id="saveName" placeholder="Name this search" maxlength="80">
+      <label><input type="checkbox" id="saveShared"> share with team</label>
+      <button id="saveOk" class="primary">Save</button>
+      <button id="saveCancel">Cancel</button>
+    </span>
+    <span class="muted" id="savedMsg"></span>
+  </section>
+
+  <!-- System header strip -->
+  <section id="sysStrip" class="sys-strip" style="display:none"></section>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" id="tabLive">Live tail</button>
+    <button class="tab" id="tabResults">Search results <span id="resCount" class="muted"></span></button>
+    <span class="spacer"></span>
+    <button class="act" id="btnExportCsv" style="display:none" title="Download up to 5,000 matching rows">⬇ CSV</button>
+    <button class="act" id="btnExportPdf" style="display:none" title="Export the loaded rows to PDF">⬇ PDF</button>
   </div>
 
+  <!-- Live tail -->
+  <section class="panel" id="paneLive">
+    <div class="ctl">
+      <button id="pauseBtn">⏸ Pause</button>
+      <label class="muted">Show
+        <select id="minSev">
+          <option value="">all lines</option>
+          <option value="mid">warning and above</option>
+          <option value="high">error and above</option>
+          <option value="critical">critical only</option>
+        </select>
+      </label>
+      <input type="text" id="hlInput" placeholder="highlight…" style="width:160px">
+      <button id="liveClear">Clear view</button>
+      <span class="muted" id="liveStatus"></span>
+    </div>
+    <pre id="liveLogs" class="console"></pre>
+  </section>
+
+  <!-- Results -->
+  <section class="panel" id="paneResults" style="display:none">
+    <div id="resBanner"></div>
+    <div class="muted" id="resInfo" style="margin-bottom:6px">Click an IP, host, process or severity to filter by it.</div>
+    <div class="tbl-wrap">
+      <table class="table" id="resTable">
+        <thead><tr><th>Time</th><th>IP</th><th>Host</th><th>Process</th><th>Sev</th><th>Message</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px"><button id="moreBtn" style="display:none;padding:7px 13px;background:#1c2434;color:#e9eef5;border:1px solid #2a3550;border-radius:6px;cursor:pointer">Load older</button></div>
+  </section>
+
   <script src="/logs.js"></script>
-  <script src="/notifications.js"></script>
 </body>
 </html>
